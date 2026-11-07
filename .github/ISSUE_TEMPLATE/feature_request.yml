@@ -1,0 +1,19 @@
+name: Feature request
+description: Suggest something Vyom or Vyomara should be able to do
+labels: [enhancement]
+body:
+  - type: textarea
+    id: problem
+    attributes:
+      label: What do you want to do?
+      description: Describe the task in your own words, for example what you would say to Vyom.
+    validations:
+      required: true
+  - type: textarea
+    id: idea
+    attributes:
+      label: How should it work?
+  - type: textarea
+    id: alternatives
+    attributes:
+      label: What do you do today instead?

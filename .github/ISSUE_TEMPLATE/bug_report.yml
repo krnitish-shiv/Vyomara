@@ -1,0 +1,34 @@
+name: Bug report
+description: Something in Vyomara does not work as expected
+labels: [bug]
+body:
+  - type: textarea
+    id: what
+    attributes:
+      label: What happened?
+      description: What you asked or clicked, what you expected, and what happened instead.
+    validations:
+      required: true
+  - type: textarea
+    id: steps
+    attributes:
+      label: Steps to reproduce
+      placeholder: |
+        1. Open Vyomara
+        2. Ask "..."
+        3. ...
+  - type: input
+    id: model
+    attributes:
+      label: Model
+      placeholder: qwen3:14b
+  - type: input
+    id: mac
+    attributes:
+      label: macOS version and Mac
+      placeholder: macOS 26.1, M4 Pro, 24 GB
+  - type: textarea
+    id: logs
+    attributes:
+      label: Logs or screenshots
+      description: Remove file contents, paths, or anything private before posting.
