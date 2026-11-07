@@ -2,6 +2,7 @@
   "name": "vyomara",
   "version": "1.0.0",
   "private": true,
+  "license": "MIT",
   "description": "Vyomara — a local-first personal AI assistant",
   "packageManager": "pnpm@12.16.1",
   "type": "module",

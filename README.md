@@ -14,6 +14,7 @@ It runs entirely on your Mac and asks before every action.**
 ![Ollama](https://img.shields.io/badge/models-Ollama-0b1020?style=for-the-badge&logo=ollama&logoColor=white)
 ![Electron](https://img.shields.io/badge/Electron-45-27d9ff?style=for-the-badge&logo=electron&logoColor=white)
 ![TypeScript](https://img.shields.io/badge/TypeScript-strict-3178c6?style=for-the-badge&logo=typescript&logoColor=white)
+![License: MIT](https://img.shields.io/badge/license-MIT-22c55e?style=for-the-badge)
 
 [Features](#-what-it-can-do) · [Mini Vyom](#-mini-vyom) · [Quick start](#-quick-start) · [Models](#-models) · [Voice](#-voice) · [Safety](#-safety-first) · [Docs](#-documentation)
 
@@ -257,6 +258,10 @@ pnpm only, and never commit secrets.
 | [Ollama guide](docs/ollama.md) | Models, context, thinking, and running any local model |
 | [Building and installing](docs/building.md) | Every command, the app bundle, the .dmg, and releases |
 | [Decisions (ADRs)](docs/adr/README.md) | Why things are built the way they are |
+
+## 📄 License
+
+Vyomara is free and open source under the [MIT License](LICENSE).
 
 <div align="center">
 <br>
