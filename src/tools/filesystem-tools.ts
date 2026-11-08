@@ -1,5 +1,5 @@
 import { constants as fsConstants } from 'node:fs';
-import { lstat, open, opendir, realpath, stat } from 'node:fs/promises';
+import { lstat, open, opendir, readFile as readRawFile, realpath, stat } from 'node:fs/promises';
 import type { Dir, Dirent, Stats } from 'node:fs';
 import type { FileHandle } from 'node:fs/promises';
 import { isAbsolute, relative, resolve, sep } from 'node:path';
@@ -1149,6 +1149,13 @@ interface EditFileInput extends PathInput {
   readonly replace_all?: boolean;
 }
 
+interface NotebookInput extends PathInput {
+  readonly cell: number;
+  readonly source?: string;
+  readonly action?: string;
+  readonly cell_type?: string;
+}
+
 interface MultiEditInput extends PathInput {
   readonly edits: string;
 }
@@ -1515,6 +1522,60 @@ export function registerFilesystemTools(
       return normalizeMultiEdit ? normalizeMultiEdit(withText) : withText;
     },
   });
+
+  // Jupyter notebooks are JSON; edit one cell and review the whole notebook as a diff.
+  registry.register(defineTool<NotebookInput, OperationOutput>({
+    id: 'notebook_edit',
+    effect: 'propose',
+    description: 'Edit a Jupyter notebook (.ipynb) cell: action "replace" (default) sets cell `cell` (0-based) to `source`, "insert" adds a new cell before index `cell` (use the cell count to append), "delete" removes it. cell_type is "code" (default) or "markdown". Read the notebook with read_file first. The user reviews the change.',
+    parameters: {
+      type: 'object',
+      properties: {
+        path: { ...PATH_PROPERTY, description: 'Absolute path of the .ipynb file.' },
+        cell: { type: 'integer', description: '0-based cell index.', minimum: 0, maximum: 10_000 },
+        source: { type: 'string', description: 'New cell source (not needed for delete).', maxLength: contentMaximum },
+        action: { type: 'string', description: '"replace" (default), "insert", or "delete".', maxLength: 7 },
+        cell_type: { type: 'string', description: '"code" (default) or "markdown".', maxLength: 8 },
+      },
+      required: ['path', 'cell'],
+      additionalProperties: false,
+    },
+    extraCheck: input => !input.path.endsWith('.ipynb')
+      ? 'notebook_edit only edits .ipynb files; use edit_file for other files.'
+      : input.action !== undefined && !['replace', 'insert', 'delete'].includes(input.action)
+        ? 'action must be replace, insert, or delete.'
+        : input.cell_type !== undefined && input.cell_type !== 'code' && input.cell_type !== 'markdown'
+          ? 'cell_type must be code or markdown.'
+          : (input.action ?? 'replace') !== 'delete' && input.source === undefined
+            ? 'source is required to replace or insert a cell.'
+            : undefined,
+    validateOutput: isOperationOutput,
+    async run(input, signal) {
+      const file = (await resolveSafeFilesystemPath(input.path, config, 'file', signal)).target;
+      let notebook: { cells?: unknown[]; [key: string]: unknown };
+      try {
+        notebook = JSON.parse(await readRawFile(file, 'utf8')) as typeof notebook;
+      } catch {
+        throw new ToolFailure('The notebook is not valid JSON.', 'tool-failed');
+      }
+      const cells = Array.isArray(notebook.cells) ? [...notebook.cells] : undefined;
+      if (!cells) throw new ToolFailure('The notebook has no cells list.', 'tool-failed');
+      const action = input.action ?? 'replace';
+      const limit = action === 'insert' ? cells.length : cells.length - 1;
+      if (input.cell > limit) throw new ToolFailure(`cell must be between 0 and ${limit} (the notebook has ${cells.length} cells).`, 'not-found');
+      const lines = (input.source ?? '').split(/(?<=\n)/u);
+      const type = input.cell_type ?? (action === 'replace' && typeof (cells[input.cell] as { cell_type?: unknown })?.cell_type === 'string' ? (cells[input.cell] as { cell_type: string }).cell_type : 'code');
+      const fresh = type === 'markdown'
+        ? { cell_type: 'markdown', metadata: {}, source: lines }
+        : { cell_type: 'code', execution_count: null, metadata: {}, outputs: [], source: lines };
+      if (action === 'delete') cells.splice(input.cell, 1);
+      else if (action === 'insert') cells.splice(input.cell, 0, fresh);
+      else cells[input.cell] = { ...(cells[input.cell] as object), ...fresh, ...(type === 'code' ? { outputs: [], execution_count: null } : {}) };
+      const content = `${JSON.stringify({ ...notebook, cells }, null, 1)}\n`;
+      const result = await approval.request({ operation: 'edit-file', path: input.path, content }, signal);
+      return { ...result, operation: 'edit-file', path: input.path };
+    },
+  }));
 
   registry.register(defineTool<PathInput, OperationOutput>({
     id: 'create_directory',

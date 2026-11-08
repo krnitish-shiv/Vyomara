@@ -133,6 +133,19 @@ listed in Verified actions, marked "(always-allowed)". See
 | `run_command` with `background: true` | Exact command | Starts a server or watcher that keeps running after the request; returns an id and its first output. |
 | `command_output` | None | `read` new output of a background command, `stop` it, or `list` them. All stop when Vyomara quits. |
 | `explore` | None | A read-only helper agent answers a code question in its own context and reports back with `path:line` references. It sees the same tools but can run only the read-only ones. |
+| `notebook_edit` | Reviewed diff | Replace, insert, or delete one cell of a Jupyter notebook; stale outputs of a replaced code cell are cleared. |
+
+## Slash commands and hooks
+
+- **Commands:** start a message with `/review`, `/fix`, `/test`, `/commit`, or
+  `/explain <what>`. Add your own as Markdown prompts in
+  `<project>/.vyomara/commands/<name>.md` or `~/.vyomara/commands/<name>.md`;
+  `$ARGUMENTS` is replaced by the rest of the line. Project and home commands
+  override the built-ins.
+- **Hooks:** `<project>/.vyomara/hooks.json` with `{"afterEdit": "pnpm exec eslint --fix ."}`
+  runs that command after each applied edit, through the normal command
+  approval (so a cloned repository cannot run code on its own; choose
+  **Always allow here** once). If it fails, its output goes back to the model to fix.
 
 ## Long conversations, plan mode, and pictures
 

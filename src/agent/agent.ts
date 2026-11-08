@@ -13,6 +13,7 @@ import { TOOL_ID_PATTERN } from '../tools/contracts.ts';
 import type { ModelToolDefinition } from '../tools/contracts.ts';
 import { CHARS_PER_TOKEN, fitMessagesToBudget, summaryCut, transcriptForSummary } from './context.ts';
 import { buildSystemPrompt, detectEnvironment, spokenRequestNote } from './system-prompt.ts';
+import { expandSlashCommand, hooksFor } from './project-extras.ts';
 import type { PersonaId } from '../shared/persona.ts';
 import type { MemoryStore } from '../storage/memory-store.ts';
 import { urlsIn, verifyLinks } from '../shared/link-check.ts';
@@ -106,6 +107,8 @@ export function describeToolCall(toolId: string, args: Readonly<Record<string, u
       return `Searching “${clip(String(args.pattern ?? ''), 40)}” in ${shortPath(args.path)}`;
     case 'edit_file':
       return `Editing ${shortPath(args.path)}`;
+    case 'notebook_edit':
+      return `${args.action === 'delete' ? 'Deleting' : args.action === 'insert' ? 'Adding' : 'Editing'} cell ${String(args.cell ?? '')} in ${shortPath(args.path)}`;
     case 'multi_edit':
       return `Editing ${shortPath(args.path)} (several changes)`;
     case 'write_file':
@@ -186,7 +189,7 @@ function verifiedAction(
 ): VerifiedAction | undefined {
   if (!isRecord(result)) return undefined;
   const path = `\`${shortPath(result.path ?? args.path)}\``;
-  if (toolId === 'edit_file' || toolId === 'multi_edit' || toolId === 'write_file' || toolId === 'create_directory' || toolId === 'delete_path') {
+  if (toolId === 'edit_file' || toolId === 'multi_edit' || toolId === 'notebook_edit' || toolId === 'write_file' || toolId === 'create_directory' || toolId === 'delete_path') {
     const verb = result.operation === 'create-file'
       ? 'Created'
       : result.operation === 'create-directory'
@@ -271,7 +274,7 @@ function verifiedAction(
 const INVALID_CALL_CODES = new Set(['invalid-input', 'input-too-large', 'unknown-tool', 'policy-denied']);
 
 const MUTATING_TOOLS = new Set([
-  'edit_file', 'multi_edit', 'git_commit', 'check_problems', 'write_file', 'create_directory', 'delete_path', 'run_command', 'open_application', 'open_url',
+  'edit_file', 'multi_edit', 'notebook_edit', 'git_commit', 'check_problems', 'write_file', 'create_directory', 'delete_path', 'run_command', 'open_application', 'open_url',
   'fetch_url', 'web_search', 'control_application', 'news_headlines',
   // Scrolling or reading again is a real step, not a repeated mistake.
   'browser',
@@ -284,7 +287,7 @@ const APPLY_CHANGE_NUDGE =
   'You described a code change but did not apply it. Do not ask the user to paste code: make the change yourself with edit_file (the user reviews it before it is written), then verify it. If you have not reproduced the problem yet, do that first.';
 
 /** Tools that change files; withheld when the user asked for no changes. */
-const FILE_CHANGE_TOOLS = new Set(['edit_file', 'multi_edit', 'write_file', 'create_directory', 'delete_path', 'git_commit']);
+const FILE_CHANGE_TOOLS = new Set(['edit_file', 'multi_edit', 'notebook_edit', 'write_file', 'create_directory', 'delete_path', 'git_commit']);
 
 /**
  * "don't change anything", "just tell me", "kuch mat badlo", "sirf batao":
@@ -306,7 +309,7 @@ const PLAN_MODE_NOTE =
 
 /** Tools with side effects, refused in plan mode (they stay in the tool list so the cached prompt matches). */
 const PLAN_MODE_BLOCKED = new Set([
-  'edit_file', 'multi_edit', 'write_file', 'create_directory', 'delete_path', 'git_commit', 'run_command',
+  'edit_file', 'multi_edit', 'notebook_edit', 'write_file', 'create_directory', 'delete_path', 'git_commit', 'run_command',
   'check_problems', 'open_application', 'open_url', 'control_application', 'browser', 'remember',
 ]);
 
@@ -471,6 +474,26 @@ export async function runAgent(
   }
 }
 
+const EDIT_TOOLS = new Set(['edit_file', 'multi_edit', 'write_file', 'notebook_edit']);
+
+/** Run the project's afterEdit hook via run_command (approval and "always allow" apply) and report briefly. */
+async function runAfterEditHook(path: string, tools: ToolExecutor, signal: AbortSignal, context: Parameters<ToolExecutor['execute']>[3]): Promise<Record<string, unknown> | undefined> {
+  const found = await hooksFor(path);
+  const command = found?.hooks.afterEdit;
+  if (!found || !command) return undefined;
+  try {
+    const result = await tools.execute('run_command', { command, cwd: found.root }, signal, context);
+    if (!isRecord(result) || result.status !== 'completed') return { command, status: 'not run (declined)' };
+    return {
+      command,
+      exitCode: result.exitCode,
+      ...(result.exitCode === 0 ? {} : { output: String(result.output ?? '').slice(-3_000), note: 'The project hook failed after this edit: fix what it reports.' }),
+    };
+  } catch {
+    return { command, status: 'could not run' };
+  }
+}
+
 /** Tools the explore helper may use: looking only. */
 export const EXPLORE_TOOLS: ReadonlySet<string> = new Set([
   'list_directory', 'directory_tree', 'find_files', 'search_text', 'read_file', 'git_info', 'current_time',
@@ -605,6 +628,10 @@ async function runAgentTask(
     throw new AgentError('Request is empty or exceeds the configured input limit.', 'invalid-request');
   }
   if (signal.aborted) throw new AgentError('Operation cancelled.', 'cancelled');
+  // "/review", "/fix", "/test", "/commit", "/explain", or the project's own commands.
+  const typed = prompt;
+  const project = (options.environment ?? detectEnvironment([...session.messages(), { role: 'user', content: typed }])).activeProject;
+  prompt = (await expandSlashCommand(typed, project)).prompt;
   session.add({ role: 'user', content: prompt });
   const start = Date.now();
   task.transition('planning');
@@ -845,7 +872,7 @@ async function runAgentTask(
         continue;
       }
 
-      if (call.toolId === 'edit_file' || call.toolId === 'multi_edit' || call.toolId === 'write_file') attemptedEdit = true;
+      if (EDIT_TOOLS.has(call.toolId)) attemptedEdit = true;
       if (WEB_TOOLS.has(call.toolId)) usedWebTool = true;
       options.onToolActivity?.({ id: toolCallId, toolId: call.toolId, label, status: 'running' });
       logger.emit({ event: 'tool.invoked', ...context, toolId: call.toolId });
@@ -857,9 +884,13 @@ async function runAgentTask(
         const action = verifiedAction(call.toolId, call.arguments, result);
         if (action) actions.push(action);
         const rejected = isRecord(result) && result.status === 'rejected';
+        // The project's afterEdit hook (e.g. a linter) runs after each applied edit, through the usual approval.
+        const hook = isRecord(result) && result.status === 'applied' && EDIT_TOOLS.has(call.toolId) && typeof result.path === 'string'
+          ? await runAfterEditHook(result.path, tools, signal, context)
+          : undefined;
         const content = JSON.stringify(rejected
           ? { ...result, note: 'The user declined this action. Do not retry it unchanged; adapt or ask the user.' }
-          : result);
+          : hook && isRecord(result) ? { ...result, afterEditHook: hook } : result);
         session.add({ role: 'tool', toolId: call.toolId, content });
         options.onToolActivity?.({
           id: toolCallId,
