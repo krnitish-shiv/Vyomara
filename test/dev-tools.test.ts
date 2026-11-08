@@ -190,7 +190,7 @@ test('the github tool reads without approval and shows every write first', async
   // A stand-in gh that records its arguments.
   const bin = join(root, 'bin');
   await mkdir(bin);
-  await writeFile(join(bin, 'gh'), '#!/bin/sh\necho "gh $*"\n', { mode: 0o755 });
+  await writeFile(join(bin, 'gh'), '#!/bin/sh\nif [ "$1" = repo ]; then echo krnitish-shiv/shop; else echo "gh $*"; fi\n', { mode: 0o755 });
   const path = process.env.PATH;
   process.env.PATH = `${bin}:${path ?? ''}`;
   t.after(() => { process.env.PATH = path; });
@@ -206,7 +206,15 @@ test('the github tool reads without approval and shows every write first', async
   assert.deepEqual(asked, [], 'reading asks nothing');
   const create = await github?.run({ path: root, action: 'pr_create', title: "Fix cart's total", body: 'Adds prices.' }, signal) as Record<string, unknown>;
   assert.equal(create.status, 'rejected');
-  assert.deepEqual(asked, [`gh pr create --title 'Fix cart'\\''s total' --body 'Adds prices.'`]);
+  assert.deepEqual(asked, [`gh pr create --repo 'krnitish-shiv/shop' --title 'Fix cart'\\''s total' --body 'Adds prices.'`]);
   assert.match(github?.inputError?.({ path: root, action: 'issue_comment' }) ?? '', /number is required/u);
   assert.equal(github?.normalizeInput?.({ path: root, action: 'issue_view', number: '#7' }) && (github.normalizeInput({ path: root, action: 'issue_view', number: '#7' }) as Record<string, unknown>).number, 7);
+});
+
+test('a path typed in a different case is the same folder on macOS, not a link', { skip: process.platform !== 'darwin' }, async t => {
+  const { resolveSafeFilesystemPath } = await import('../src/tools/filesystem-tools.ts');
+  const root = await folder(t);
+  await mkdir(join(root, 'Projects', 'Shop'), { recursive: true });
+  const resolved = await resolveSafeFilesystemPath(join(root, 'projects', 'shop'), configFor(root), 'directory', signal);
+  assert.equal(resolved.target, join(root, 'Projects', 'Shop'));
 });

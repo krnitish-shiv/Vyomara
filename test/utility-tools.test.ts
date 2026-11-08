@@ -162,3 +162,12 @@ test('encyclopedia searches drop recency and question words', () => {
   assert.equal(encyclopediaQuery('who is the PM of India'), 'PM India');
   assert.equal(encyclopediaQuery('latest version'), 'latest version');
 });
+
+test('Roman Hinglish questions and Devanagari replies are recognised', async () => {
+  const { isRomanHinglish, isMostlyDevanagari } = await import('../src/agent/agent.ts');
+  assert.ok(isRomanHinglish('ye total function kya karta hai, samjhao'));
+  assert.ok(!isRomanHinglish('explain what the total function does'));
+  assert.ok(!isRomanHinglish('यह फंक्शन क्या करता है'));
+  assert.ok(isMostlyDevanagari('यह `total` फंक्शन सभी कीमतों को जोड़ता है और कुल रकम लौटाता है।'));
+  assert.ok(!isMostlyDevanagari('Ye `total` function saari prices ko jodta hai aur kul rakam return karta hai.'));
+});

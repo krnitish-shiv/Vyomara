@@ -189,7 +189,8 @@ export function registerGitTools(registry: ToolRegistry, config: AppConfig, port
   registry.register(commit);
 
   registerBranchAndSyncTools(registry, repositoryRoot, approval, runner, ports?.approvalMemory);
-  registerGitHubTool(registry, repositoryRoot, approval, runner);
+  const folderOf = async (path: string, signal: AbortSignal): Promise<string> => (await resolveSafeFilesystemPath(path, config, 'directory', signal)).target;
+  registerGitHubTool(registry, repositoryRoot, folderOf, approval, runner);
 }
 
 type Approval = NonNullable<ActionToolPorts['approval']>;
@@ -327,12 +328,27 @@ function gh(args: readonly string[], cwd: string, signal: AbortSignal): Promise<
 }
 
 const GITHUB_READ = new Set(['pr_list', 'pr_view', 'pr_checks', 'pr_diff', 'issue_list', 'issue_view', 'run_list', 'run_log']);
-const GITHUB_WRITE = new Set(['pr_create', 'pr_comment', 'issue_create', 'issue_comment']);
+const GITHUB_WRITE = new Set(['repo_create', 'pr_create', 'pr_comment', 'issue_create', 'issue_comment']);
 
-function registerGitHubTool(registry: ToolRegistry, repositoryRoot: RepositoryRoot, approval: Approval, runner: Runner): void {
+/** Create a GitHub repository from a local folder (initialising git there if needed) and push it. */
+async function createRepository(input: Record<string, unknown>, approval: Approval, runner: Runner, signal: AbortSignal): Promise<Record<string, unknown>> {
+  const folder = String(input.path);
+  const inside = await git(['rev-parse', '--show-toplevel'], folder, signal).catch(() => ({ code: 1, output: '' }));
+  const isRepository = inside.code === 0 && inside.output.trim() === folder.replace(/\/+$/u, '');
+  const description = typeof input.body === 'string' && input.body.trim() !== '' ? ` --description ${quote(input.body.trim().slice(0, 300))}` : '';
+  const initialise = isRepository ? '' : `git init -q -b main && git add -A && git commit -q -m 'Initial commit' && `;
+  const command = `${initialise}gh repo create ${quote(String(input.name))} ${input.public === true ? '--public' : '--private'}${description} --source . --push`;
+  const result = await approvedRun(command, folder, approval, runner, undefined, signal, 120);
+  const url = /https:\/\/github\.com\/[\w.-]+\/[\w.-]+/u.exec(String(result.output ?? ''))?.[0];
+  return { ...result, ...(url ? { url } : {}) };
+}
+
+function registerGitHubTool(registry: ToolRegistry, repositoryRoot: RepositoryRoot, folderOf: RepositoryRoot, approval: Approval, runner: Runner): void {
   const error = (value: unknown): string | undefined => {
     if (!isRecord(value)) return 'Arguments must be a JSON object.';
-    if (Object.keys(value).some(key => !['path', 'action', 'number', 'title', 'body', 'base', 'draft', 'state'].includes(key))) return 'Use only path, action, number, title, body, base, draft, state.';
+    if (Object.keys(value).some(key => !['path', 'action', 'number', 'title', 'body', 'base', 'draft', 'state', 'name', 'public'].includes(key))) return 'Use only path, action, number, title, body, base, draft, state, name, public.';
+    if (value.action === 'repo_create' && (typeof value.name !== 'string' || !/^[\w.-]{1,100}$/u.test(value.name))) return 'name must be the new repository name (letters, digits, . - _).';
+    if (value.public !== undefined && typeof value.public !== 'boolean') return 'public must be true or false.';
     if (typeof value.path !== 'string' || !isAbsolute(value.path)) return 'path must be the absolute path of the repository.';
     const action = value.action;
     if (typeof action !== 'string' || (!GITHUB_READ.has(action) && !GITHUB_WRITE.has(action))) return `action must be one of: ${[...GITHUB_READ, ...GITHUB_WRITE].join(', ')}.`;
@@ -348,7 +364,7 @@ function registerGitHubTool(registry: ToolRegistry, repositoryRoot: RepositoryRo
   registry.register({
     id: 'github',
     effect: 'shell',
-    description: 'GitHub for this repository through the user\'s GitHub CLI login. Reading needs no approval: pr_list, pr_view (number, or the current branch\'s PR), pr_checks (CI status), pr_diff, issue_list, issue_view, run_list (recent workflow runs), run_log (failed steps of run `number`). Writing asks first: pr_create (title, body, base?, draft?; push the branch first), pr_comment, issue_create, issue_comment.',
+    description: 'GitHub through the user\'s GitHub CLI login. repo_create (name, public? default private, body = description) creates a GitHub repository from the local folder at path and pushes it (the folder is made a git repository with a first commit if needed). For an existing repository, reading needs no approval: pr_list, pr_view (number, or the current branch\'s PR), pr_checks (CI status), pr_diff, issue_list, issue_view, run_list (recent workflow runs), run_log (failed steps of run `number`). Writing asks first: pr_create (title, body, base?, draft?; push the branch first), pr_comment, issue_create, issue_comment.',
     parameters: {
       type: 'object',
       properties: {
@@ -360,6 +376,8 @@ function registerGitHubTool(registry: ToolRegistry, repositoryRoot: RepositoryRo
         base: { type: 'string', description: 'pr_create: target branch (default: the repository default).', maxLength: 200 },
         draft: { type: 'boolean', description: 'pr_create: open as a draft.' },
         state: { type: 'string', description: 'pr_list / issue_list: open (default), closed, merged, or all.', maxLength: 6 },
+        name: { type: 'string', description: 'repo_create: the new repository name.', maxLength: 100 },
+        public: { type: 'boolean', description: 'repo_create: true for a public repository (default private).' },
       },
       required: ['path', 'action'],
       additionalProperties: false,
@@ -373,8 +391,9 @@ function registerGitHubTool(registry: ToolRegistry, repositoryRoot: RepositoryRo
     inputError: error,
     validateOutput: (value): value is Record<string, unknown> => isRecord(value),
     async run(input, signal) {
-      const root = await repositoryRoot(String(input.path), signal);
       const action = String(input.action);
+      if (action === 'repo_create') return createRepository({ ...input, path: await folderOf(String(input.path), signal) }, approval, runner, signal);
+      const root = await repositoryRoot(String(input.path), signal);
       const number = typeof input.number === 'number' ? String(input.number) : undefined;
       const state = typeof input.state === 'string' ? input.state : 'open';
       if (GITHUB_READ.has(action)) {
@@ -397,11 +416,17 @@ function registerGitHubTool(registry: ToolRegistry, repositoryRoot: RepositoryRo
       }
       const title = typeof input.title === 'string' ? input.title.trim() : '';
       const body = typeof input.body === 'string' ? input.body : '';
+      // Name the repository in the command, so the approval shows exactly where it will be written.
+      const named = await gh(['repo', 'view', '--json', 'nameWithOwner', '-q', '.nameWithOwner'], root, signal);
+      const repo = named.output.trim();
+      if (named.code !== 0 || !/^[\w.-]+\/[\w.-]+$/u.test(repo)) {
+        return { status: 'failed', action, output: `No GitHub repository was found for ${root}: ${named.output.slice(0, 300)}` };
+      }
       const command = {
-        pr_create: `gh pr create --title ${quote(title)} --body ${quote(body)}${typeof input.base === 'string' ? ` --base ${quote(input.base)}` : ''}${input.draft === true ? ' --draft' : ''}`,
-        pr_comment: `gh pr comment ${number ?? ''} --body ${quote(body)}`,
-        issue_create: `gh issue create --title ${quote(title)} --body ${quote(body)}`,
-        issue_comment: `gh issue comment ${number ?? ''} --body ${quote(body)}`,
+        pr_create: `gh pr create --repo ${quote(repo)} --title ${quote(title)} --body ${quote(body)}${typeof input.base === 'string' ? ` --base ${quote(input.base)}` : ''}${input.draft === true ? ' --draft' : ''}`,
+        pr_comment: `gh pr comment ${number ?? ''} --repo ${quote(repo)} --body ${quote(body)}`,
+        issue_create: `gh issue create --repo ${quote(repo)} --title ${quote(title)} --body ${quote(body)}`,
+        issue_comment: `gh issue comment ${number ?? ''} --repo ${quote(repo)} --body ${quote(body)}`,
       }[action as 'pr_create' | 'pr_comment' | 'issue_create' | 'issue_comment'];
       // Writes are never "always allowed": each one is shown.
       return approvedRun(command, root, approval, runner, undefined, signal, 90);

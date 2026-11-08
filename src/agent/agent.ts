@@ -324,6 +324,24 @@ const PLAN_MODE_BLOCKED = new Set([
   'check_problems', 'open_application', 'open_url', 'control_application', 'browser', 'remember',
 ]);
 
+const ROMAN_HINGLISH_NUDGE =
+  'The user wrote in Roman-letter Hinglish, so reply in Roman letters only (no Devanagari script). Rewrite your whole previous answer in Roman Hinglish, with the same content, and keep code and technical terms in English.';
+
+/** A Hinglish message typed in Roman letters ("ye function kya karta hai?"). */
+export function isRomanHinglish(text: string): boolean {
+  if (/[\u0900-\u097F]/u.test(text)) return false;
+  const words = text.toLowerCase().match(/[a-z]+/gu) ?? [];
+  const hindi = words.filter(word => /^(?:hai|hain|kya|kyu|kyun|kaise|kaha|kahan|karo|kar|karta|karti|karte|mein|mai|ka|ki|ke|ko|se|batao|bataiye|samjhao|samjha|nahi|nhi|aur|ye|yeh|wo|woh|kuch|bhi|toh|to|hota|hoti|abhi|accha|acha|dekho|chahiye|wala|wali)$/u.test(word)).length;
+  return hindi >= 2 && hindi / Math.max(words.length, 1) >= 0.15;
+}
+
+/** More than a fifth of the reply's letters are Devanagari. */
+export function isMostlyDevanagari(text: string): boolean {
+  const devanagari = (text.match(/[\u0900-\u097F]/gu) ?? []).length;
+  const latin = (text.replace(/```[\s\S]*?```|`[^`]*`/gu, '').match(/[A-Za-z]/gu) ?? []).length;
+  return devanagari > 20 && devanagari / (devanagari + latin) > 0.2;
+}
+
 const LOOK_IT_UP_NUDGE =
   'This question needs current information, and your own knowledge is out of date. Do not answer from memory: look it up now with the right tool (software_version for the latest version of a library or tool, weather, currency_convert, current_time, news_headlines, or web_search then fetch_url), then answer from what it returns, in the language of the user\'s message.';
 
@@ -790,7 +808,9 @@ async function runAgentTask(
       // "Latest React Native version?" answered without a single tool call: from stale memory.
       const answeredFromMemory = toolCalls === 0 && hasWebTools && asksForCurrentInfo(prompt);
       const askedToLookItUp = hasWebTools && offersToLookItUp(response.text);
-      if (canNudge && (unappliedChange || unfinishedPlan || gaveUpOnWeb || answeredFromMemory || askedToLookItUp || announcesNextStep(response.text))) {
+      // Spoken replies may use the voice's script; typed Roman Hinglish gets Roman letters back.
+      const wrongScript = !options.voice && isRomanHinglish(typed) && isMostlyDevanagari(response.text);
+      if (canNudge && (unappliedChange || unfinishedPlan || gaveUpOnWeb || answeredFromMemory || askedToLookItUp || wrongScript || announcesNextStep(response.text))) {
         continuationNudges += 1;
         session.add({ role: 'assistant', content: response.text });
         pendingNudge = unappliedChange ? APPLY_CHANGE_NUDGE
@@ -798,6 +818,7 @@ async function runAgentTask(
           : gaveUpOnWeb ? USE_THE_WEB_NUDGE
           : answeredFromMemory ? LOOK_IT_UP_NUDGE
           : askedToLookItUp ? DO_NOT_ASK_NUDGE
+          : wrongScript ? ROMAN_HINGLISH_NUDGE
           : CONTINUE_NUDGE;
         continue;
       }

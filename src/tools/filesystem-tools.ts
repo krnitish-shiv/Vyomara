@@ -325,7 +325,7 @@ async function resolveAllowedPath(
     : matchedRoot.canonical;
   const suffix = relative(lexicalRoot, normalized);
   const root = matchedRoot.canonical;
-  const expectedTarget = resolve(root, suffix);
+  let expectedTarget = resolve(root, suffix);
   let actualTarget: string;
   try {
     actualTarget = await realpath(normalized);
@@ -339,7 +339,11 @@ async function resolveAllowedPath(
     throw new FilesystemToolError('Protected system and credential paths are not accessible.', 'permission-denied');
   }
   if (actualTarget !== expectedTarget) {
-    throw new FilesystemToolError('Symbolic links are not allowed in requested paths.', 'invalid-path');
+    // macOS volumes ignore case: "~/projects/app" is "~/Projects/app", not a link. Use the real spelling.
+    if (!sameIgnoringCase(actualTarget, expectedTarget)) {
+      throw new FilesystemToolError('Symbolic links are not allowed in requested paths.', 'invalid-path');
+    }
+    expectedTarget = actualTarget;
   }
 
   const segments = relative(root, expectedTarget).split(sep).filter(Boolean);
@@ -376,6 +380,10 @@ async function resolveAllowedPath(
     throw new FilesystemToolError('The requested path is not a directory.', 'invalid-path');
   }
   return { root, target: current, stats: currentStats };
+}
+
+function sameIgnoringCase(a: string, b: string): boolean {
+  return process.platform === 'darwin' && a.toLowerCase() === b.toLowerCase();
 }
 
 export async function resolveSafeFilesystemPath(
