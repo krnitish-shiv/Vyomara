@@ -59,3 +59,38 @@ export function fitMessagesToBudget(
   // Last resort: shrink every tool result.
   return current.map(message => shortened(message, 400));
 }
+
+/**
+ * How many leading messages to replace with a summary so the rest fits
+ * comfortably (about 60% of the budget, leaving room for this turn's work).
+ * Returns 0 while everything still fits. The cut is always at the start of a
+ * turn (a user message), and the current turn is never summarised.
+ */
+export function summaryCut(messages: readonly SessionMessage[], budgetChars: number): number {
+  let currentTurnStart = messages.length - 1;
+  while (currentTurnStart > 0 && messages[currentTurnStart]?.role !== 'user') currentTurnStart -= 1;
+  if (currentTurnStart <= 0) return 0;
+  const compact = messages.map((message, index) => index < currentTurnStart ? shortened(message, 1_500) : message);
+  if (totalChars(compact) <= budgetChars) return 0;
+  const target = budgetChars * 0.6;
+  for (let cut = 1; cut <= currentTurnStart; cut += 1) {
+    if (messages[cut]?.role !== 'user') continue;
+    if (totalChars(compact.slice(cut)) <= target) return cut;
+  }
+  return currentTurnStart;
+}
+
+/** The earlier messages as plain text for the model to summarise (long tool output trimmed). */
+export function transcriptForSummary(messages: readonly SessionMessage[], maxChars = 24_000): string {
+  const lines = messages.map(message => {
+    if (message.role === 'user') return `User: ${message.content}`;
+    if (message.role === 'tool') return `Tool ${message.toolId} result: ${message.content.slice(0, 600)}${message.content.length > 600 ? '…' : ''}`;
+    if (message.kind === 'tool-call') {
+      return `Assistant called: ${message.toolCalls.map(call => `${call.toolId}(${JSON.stringify(call.arguments).slice(0, 300)})`).join(', ')}`;
+    }
+    return `Assistant: ${message.content}`;
+  });
+  const text = lines.join('\n');
+  // Keep the end when it is still too long: the latest work matters most.
+  return text.length <= maxChars ? text : `…\n${text.slice(-maxChars)}`;
+}

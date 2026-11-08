@@ -6,11 +6,12 @@ import { ProviderError } from '../providers/provider.ts';
 import type { ModelProvider, ProviderResponse } from '../providers/provider.ts';
 import { OperationStoppedError, runBounded } from '../shared/bounded.ts';
 import { Session } from '../session/session.ts';
+import type { SessionMessage } from '../session/session.ts';
 import { TaskRun } from '../tasks/task-run.ts';
 import { ToolExecutionError, ToolExecutor } from '../tools/executor.ts';
 import { TOOL_ID_PATTERN } from '../tools/contracts.ts';
 import type { ModelToolDefinition } from '../tools/contracts.ts';
-import { CHARS_PER_TOKEN, fitMessagesToBudget } from './context.ts';
+import { CHARS_PER_TOKEN, fitMessagesToBudget, summaryCut, transcriptForSummary } from './context.ts';
 import { buildSystemPrompt, detectEnvironment, spokenRequestNote } from './system-prompt.ts';
 import type { PersonaId } from '../shared/persona.ts';
 import type { MemoryStore } from '../storage/memory-store.ts';
@@ -445,6 +446,57 @@ export async function runAgent(
   }
 }
 
+/** Summaries of early turns, per session and cut point, so later requests in the app reuse them. */
+const summaryCache = new Map<string, string>();
+
+const SUMMARY_REQUEST = 'Before continuing, summarise the conversation below for yourself, because its full text will no longer fit. Write at most 15 short bullet points in English: what the user asked for, decisions and preferences, the projects, files, and commands involved, what was changed or found, and anything still open. Do not call tools. Reply with the bullet points only.';
+
+async function summarizeEarlierTurns(
+  session: Session,
+  budgetChars: number,
+  system: string,
+  tools: readonly ModelToolDefinition[],
+  provider: ModelProvider,
+  config: AppConfig,
+  signal: AbortSignal,
+): Promise<{ readonly cut: number; readonly message: SessionMessage } | undefined> {
+  const messages = session.messages();
+  const cut = summaryCut(messages, budgetChars);
+  if (cut === 0) return undefined;
+  const key = `${session.id}:${cut}`;
+  let text = summaryCache.get(key);
+  if (text === undefined) {
+    try {
+      // Same system prompt and tools as the real request, so Ollama's cached prefix stays valid.
+      const raw = await runBounded(
+        providerSignal => provider.complete(
+          [{ role: 'user', content: `${SUMMARY_REQUEST}\n\n${transcriptForSummary(messages.slice(0, cut))}` }],
+          providerSignal,
+          tools,
+          undefined,
+          system,
+        ),
+        Math.min(config.requestTimeoutMs, 120_000),
+        signal,
+      );
+      const response = parseProviderResponse(raw, config.maxResponseChars);
+      text = response.kind === 'final' ? response.text.trim().slice(0, 4_000) : '';
+    } catch (error) {
+      if (error instanceof OperationStoppedError && error.reason === 'cancelled') throw new AgentError('Operation cancelled.', 'cancelled');
+      text = '';
+    }
+    if (text) {
+      summaryCache.set(key, text);
+      if (summaryCache.size > 50) summaryCache.delete(summaryCache.keys().next().value as string);
+    }
+  }
+  if (!text) return undefined;
+  return {
+    cut,
+    message: { role: 'user', content: `[Summary of the earlier part of this conversation, written by you because the full text no longer fits]\n${text}` },
+  };
+}
+
 /** The system prompt and tools a request gets. primeAgent must build exactly the same for a new chat. */
 async function prepareTurn(
   prompt: string,
@@ -518,6 +570,8 @@ async function runAgentTask(
   let attemptedEdit = false;
   let usedWebTool = false;
   const links = new LinkAliases();
+  // A long conversation keeps its early turns as a summary instead of losing them.
+  const summary = await summarizeEarlierTurns(session, budgetChars, system, modelTools, options.provider, config, signal);
   const canEdit = modelTools.some(tool => tool.id === 'edit_file' || tool.id === 'write_file');
   let streamedSomething = false;
   const onText = options.onText;
@@ -546,7 +600,8 @@ async function runAgentTask(
 
   for (let iteration = 1; iteration <= config.maxAgentIterations; iteration += 1) {
     if (signal.aborted) throw new AgentError('Operation cancelled.', 'cancelled');
-    const fitted = fitMessagesToBudget(session.messages(), budgetChars).map(message =>
+    const visible = summary ? [summary.message, ...session.messages().slice(summary.cut)] : session.messages();
+    const fitted = fitMessagesToBudget(visible, budgetChars).map(message =>
       message.role === 'assistant' && message.kind !== 'tool-call'
         ? { ...message, content: links.shorten(stripAppFooters(message.content)) }
         // The model sees long URLs as short aliases it can copy without mistakes.
