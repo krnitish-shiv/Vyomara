@@ -72,6 +72,10 @@ your Mac.**
 - 🧾 **Diffs in VS Code:** proposed edits open side by side in VS Code. One click approves all edits in a task.
 - ↶ **Undo:** undo any request's approved file changes.
 - 📘 **Project rules:** follows your project's `AGENTS.md`, `CLAUDE.md`, `.github/copilot-instructions.md`, or `.cursorrules`.
+- 🧰 **Developer tools:** read-only git, approved commits, one-diff multi-file edits, a Problems list from your typecheck/lint, background dev servers, and a read-only `explore` helper.
+- 🗺️ **Plan first:** see the plan before anything changes, then press **Go ahead**.
+- 🖼️ **Pictures:** paste a screenshot of an error for a vision model to read.
+- 🔌 **MCP servers:** add GitHub, databases, and other tools via `mcp.json` (every call is approved).
 - ✅ **Verified actions:** every reply ends with a list built only from real tool results, so the assistant never claims work it did not do.
 - 🗂️ **History:** search past conversations, resume one, or delete it.
 

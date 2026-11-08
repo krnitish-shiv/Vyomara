@@ -48,6 +48,7 @@ import {
 } from '../desktop/file-operation-approval.ts';
 import { ActionApprovalError, ActionApprovalManager } from '../desktop/action-approval.ts';
 import { MacApplicationLauncher } from '../desktop/mac-application-launcher.ts';
+import { McpManager, readMcpConfig } from '../tools/mcp-client.ts';
 import { ShellCommandRunner } from '../tools/command-runner.ts';
 import { HttpWebClient } from '../tools/web-client.ts';
 import { ApprovalMemory, DEFAULT_BROWSER, grantId, parseGrantId } from '../tools/action-tools.ts';
@@ -69,6 +70,9 @@ let activeFileOperationApproval: FileOperationApprovalManager | undefined;
 let activeActionApproval: ActionApprovalManager | undefined;
 let activeModelPull: AbortController | undefined;
 const shellCommandRunner = new ShellCommandRunner();
+/** The user's MCP servers (mcp.json in the data folder), started at launch. */
+const mcpManager = new McpManager();
+const mcpAllowed = new Set<string>();
 /** Commands the user chose to always allow; cleared when the app quits. */
 /** Standing permissions (apps, browsers, web hosts) are loaded from disk at startup. */
 let approvalMemory = new ApprovalMemory();
@@ -573,6 +577,8 @@ function desktopToolOptions(
       ...(macApplicationLauncher ? { launcher: macApplicationLauncher } : {}),
       web: new HttpWebClient(desktopConfig.searxngUrl === undefined ? {} : { searxngUrl: desktopConfig.searxngUrl }),
       ...(chromeBrowser ? { browser: chromeBrowser } : {}),
+      mcp: mcpManager,
+      mcpAllowed,
     },
   };
 }
@@ -1237,6 +1243,16 @@ app.whenReady().then(async () => {
 
   mainWindow = createWindow();
   warmUpModel(config);
+  // MCP servers start in the background; their tools change the prompt, so prime again once they are ready.
+  const startupConfig = config;
+  void readMcpConfig(startupConfig.dataDirectory)
+    .then(async servers => {
+      if (Object.keys(servers).length === 0) return;
+      await mcpManager.start(servers);
+      console.error(JSON.stringify({ event: 'mcp.started', servers: mcpManager.status().map(server => ({ name: server.name, state: server.state, tools: server.tools })) }));
+      warmUpModel(config);
+    })
+    .catch(error => console.error(JSON.stringify({ event: 'mcp.config-invalid', message: error instanceof Error ? error.message : 'unknown' })));
   app.on('activate', () => showMainWindow());
   registerVoiceShortcut();
   pipEnabled = await readPipEnabled();
@@ -1270,6 +1286,7 @@ app.on('before-quit', () => {
   activeModelPull?.abort();
   activePrime?.abort();
   shellCommandRunner.stopAll();
+  mcpManager.stopAll();
   macSpeechRunner.stop();
   whisperServer.stop();
   void localWhisperRunner?.stop();

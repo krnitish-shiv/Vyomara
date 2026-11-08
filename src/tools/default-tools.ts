@@ -10,6 +10,8 @@ import { registerUtilityTools } from './utility-tools.ts';
 import { registerGitTools } from './git-tools.ts';
 import { registerProblemsTool } from './problems-tool.ts';
 import { registerExploreTool, type ExplorePort } from './explore-tool.ts';
+import { registerMcpTools } from './mcp-tools.ts';
+import { MAX_MODEL_TOOLS } from '../providers/provider.ts';
 import type { MemoryStore } from '../storage/memory-store.ts';
 
 export interface ToolRegistryOptions {
@@ -44,5 +46,9 @@ export function createDefaultToolRegistry(
   }
   // Clock, calculator, units, dates, and Mac status always; weather, rates, and versions with web access.
   registerUtilityTools(registry, options.actions);
+  // MCP tools last, in whatever room the tool limit leaves.
+  if (options.actions?.mcp) {
+    registerMcpTools(registry, options.actions.mcp, options.actions.approval, options.actions.mcpAllowed ?? new Set(), MAX_MODEL_TOOLS - registry.modelTools().length);
+  }
   return registry;
 }

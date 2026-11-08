@@ -3,6 +3,7 @@ import { isAbsolute } from 'node:path';
 import type { AppConfig } from '../config/config.ts';
 import { ToolFailure, type Tool, type ToolRegistry } from './contracts.ts';
 import { resolveSafeFilesystemPath } from './filesystem-tools.ts';
+import type { McpPort } from './mcp-client.ts';
 
 /** An action that changes something outside Vyomara and therefore needs the user's approval. */
 export type ActionProposal =
@@ -21,6 +22,13 @@ export type ActionProposal =
     readonly operation: 'fetch' | 'search';
     readonly target: string;
     readonly host: string;
+  }
+  | {
+    /** A tool on an MCP server the user configured; arguments as JSON text. */
+    readonly kind: 'mcp';
+    readonly server: string;
+    readonly tool: string;
+    readonly arguments: string;
   };
 
 /**
@@ -200,6 +208,10 @@ export interface ActionToolPorts {
   readonly web?: WebClientPort;
   /** Enables browser: driving the user's own Chrome (search, open, read, click, scroll). */
   readonly browser?: BrowserPort;
+  /** Tools from the user's MCP servers (mcp.json); each call is approved. */
+  readonly mcp?: McpPort;
+  /** MCP tools the user chose "Always allow" for, until the app quits. */
+  readonly mcpAllowed?: Set<string>;
 }
 
 export type BrowserAction =

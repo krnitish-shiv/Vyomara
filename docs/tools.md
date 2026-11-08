@@ -122,6 +122,58 @@ new files, and deletions always ask. Everything done without a prompt is still
 listed in Verified actions, marked "(always-allowed)". See
 [ADR-0016](./adr/0016-web-reading-and-remembered-approvals.md).
 
+## Coding helpers
+
+| Tool | Approval | Notes |
+|---|---|---|
+| `multi_edit` | Reviewed diff | Several `{old_text, new_text, replace_all?}` edits to one file, applied in order and reviewed as one diff. |
+| `git_info` | None | Read-only git without a shell: `status`, `diff` (`staged`, `target` file/branch), `log`, `show`, `branches`. Targets cannot be options. |
+| `git_commit` | Exact command | `git add -A` (or the listed files) and `git commit -m …`, shown before it runs. Never pushes. |
+| `check_problems` | Exact command | Runs the project's own typecheck/lint script, or `tsc`, `cargo check`, `go vet`, `ruff`, `swift build`, and returns problems as `file:line:column` with a message. |
+| `run_command` with `background: true` | Exact command | Starts a server or watcher that keeps running after the request; returns an id and its first output. |
+| `command_output` | None | `read` new output of a background command, `stop` it, or `list` them. All stop when Vyomara quits. |
+| `explore` | None | A read-only helper agent answers a code question in its own context and reports back with `path:line` references. It sees the same tools but can run only the read-only ones. |
+
+## Long conversations, plan mode, and pictures
+
+- **Summaries:** when a conversation no longer fits the context window, its
+  oldest turns are summarised by the model and sent as a short note before
+  the recent turns, instead of being dropped.
+- **Plan first** (composer toggle): the agent investigates with read-only
+  tools and replies with a numbered plan; edits, commands, and launches are
+  refused until you press **Go ahead**.
+- **Pictures:** attach, paste, or drop up to four images. They go with that
+  message to a model marked **Vision** (for example `qwen2.5vl:7b` or
+  `gemma3:12b`) and are not stored in history.
+
+## MCP servers
+
+Vyomara can use tools from [Model Context Protocol](https://modelcontextprotocol.io)
+servers. Put them in `mcp.json` in the data folder
+(`~/Library/Application Support/vyomara/mcp.json`, or `$VYOM_DATA_DIR/mcp.json`),
+in the same format as Claude Desktop:
+
+```json
+{
+  "mcpServers": {
+    "github": {
+      "command": "npx",
+      "args": ["-y", "@modelcontextprotocol/server-github"],
+      "env": { "GITHUB_PERSONAL_ACCESS_TOKEN": "…" }
+    },
+    "time": { "command": "uvx", "args": ["mcp-server-time"], "enabled": false }
+  }
+}
+```
+
+- Servers start with the app (stdio transport). Their tools appear to the
+  model as `mcp_<server>_<tool>`, within a total limit of 64 tools.
+- **Every call asks first**, showing the server, tool, and arguments.
+  **Always allow** lasts until Vyomara quits.
+- A server that fails to start is skipped; the CLI prints each server's state.
+- MCP servers are programs you run with your own permissions. Only add ones
+  you trust, and keep tokens in `env`, never in the chat.
+
 ## Bounds
 
 | Bound | Limit | Setting |

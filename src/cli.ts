@@ -1,4 +1,5 @@
 import { spawn } from 'node:child_process';
+import { McpManager, readMcpConfig } from './tools/mcp-client.ts';
 import { createInterface } from 'node:readline';
 import { readModelSettings, runRequest, withSavedModelSettings } from './app/application.ts';
 import { AgentError } from './agent/agent.ts';
@@ -158,6 +159,12 @@ const terminalActionApproval: ActionApprovalPort = {
     if (action.kind === 'app-control') {
       process.stderr.write(`\n${bold(`▶ ${action.action} ${action.application}`)}\n`);
       return askYesNo('Allow?');
+    }
+    if (action.kind === 'mcp') {
+      process.stderr.write(`\n${bold(`▶ MCP ${action.server}: ${action.tool}`)}\n${dim(action.arguments)}\n`);
+      const answer = (await terminal.ask(`Allow? ${dim('[y = once, a = always this session, N = no]')} `))?.trim() ?? '';
+      if (/^(?:a|always)$/iu.test(answer)) return 'always';
+      return /^(?:y|yes|haan|ha|han)$/iu.test(answer);
     }
     if (action.kind === 'web') {
       process.stderr.write(action.operation === 'search'
@@ -341,10 +348,29 @@ async function main(): Promise<void> {
     return;
   }
 
+  // MCP servers from <data dir>/mcp.json, if any (failures are reported, never fatal).
+  const mcp = new McpManager();
+  try {
+    const servers = await readMcpConfig(config.dataDirectory);
+    if (Object.keys(servers).length > 0) {
+      await mcp.start(servers);
+      for (const server of mcp.status()) {
+        console.error(dim(`MCP ${server.name}: ${server.state === 'ready' ? `${server.tools} tools` : `${server.state}${server.error ? ` (${server.error})` : ''}`}`));
+      }
+    }
+  } catch (error) {
+    console.error(dim(`MCP: ${error instanceof Error ? error.message : 'mcp.json could not be read'}`));
+  }
+  process.once('exit', () => mcp.stopAll());
+  const commandRunner = new ShellCommandRunner();
+  process.once('exit', () => commandRunner.stopAll());
+
   const actions = {
     approval: terminalActionApproval,
     approvalMemory: new ApprovalMemory(),
-    commandRunner: new ShellCommandRunner(),
+    commandRunner,
+    mcp,
+    mcpAllowed: new Set<string>(),
     web: new HttpWebClient(config.searxngUrl === undefined ? {} : { searxngUrl: config.searxngUrl }),
     ...(process.platform === 'darwin' ? { launcher: new MacApplicationLauncher() } : {}),
   };

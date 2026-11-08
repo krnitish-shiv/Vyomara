@@ -140,7 +140,9 @@ export function ActionApprovalCard({
         ? proposal.operation === 'search' ? 'Search the web?' : `Let ${assistantName} read this web page?`
         : proposal.kind === 'app-control'
           ? `${proposal.action.replace(/^./u, letter => letter.toUpperCase())} ${proposal.application}?`
-          : 'Open this web page?';
+          : proposal.kind === 'mcp'
+            ? `Use ${proposal.tool} on ${proposal.server}?`
+            : 'Open this web page?';
   const remember = proposal.kind === 'command'
     ? { label: 'Always allow here', title: 'Run now, and run this exact command in this folder without asking again until Vyomara quits' }
     : proposal.kind === 'web'
@@ -151,6 +153,8 @@ export function ActionApprovalCard({
           ? proposal.action === 'quit'
             ? undefined
             : { label: `Always allow ${proposal.application}`, title: `Open, focus, hide, and minimize ${proposal.application} without asking again (quitting still asks).` }
+          : proposal.kind === 'mcp'
+            ? { label: `Always allow ${proposal.tool}`, title: `Use ${proposal.tool} on ${proposal.server} without asking again until Vyomara quits.` }
           : { label: `Always allow ${proposal.application ?? 'browser'}`, title: `Open web pages in ${proposal.application ?? 'your default browser'} without asking again. Revoke anytime in Permissions.` };
   return (
     <section className="file-operation-review action-review" aria-label={title} ref={cardRef}>
@@ -186,6 +190,14 @@ export function ActionApprovalCard({
             : `Only changes the ${proposal.application} window; nothing is closed or deleted.`}
         </p>
       )}
+      {proposal.kind === 'mcp' && (
+        <>
+          <pre className="action-command"><code>{proposal.arguments}</code></pre>
+          <p className="file-operation-warning">
+            The MCP server “{proposal.server}” runs this tool with these arguments. It is a program you configured in mcp.json and may change things or contact services.
+          </p>
+        </>
+      )}
       {proposal.kind === 'web' && (
         <>
           <code className="file-operation-path">{proposal.target}</code>
@@ -196,7 +208,7 @@ export function ActionApprovalCard({
       )}
       <div className="file-operation-actions">
         <button className="file-operation-approve" type="button" onClick={() => onDecide(true)} disabled={busy}>
-          {proposal.kind === 'command' ? 'Run' : proposal.kind === 'web' || proposal.kind === 'app-control' ? 'Allow' : 'Open'}
+          {proposal.kind === 'command' ? 'Run' : proposal.kind === 'web' || proposal.kind === 'app-control' || proposal.kind === 'mcp' ? 'Allow' : 'Open'}
         </button>
         {remember && (
           <button className="file-operation-reject" type="button" onClick={() => onDecide(true, true)} disabled={busy} title={remember.title}>

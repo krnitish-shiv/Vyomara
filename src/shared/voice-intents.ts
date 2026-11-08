@@ -342,7 +342,8 @@ export function approvalQuestion(proposal:
   | { readonly kind: 'application'; readonly application: string }
   | { readonly kind: 'url'; readonly url: string }
   | { readonly kind: 'web'; readonly operation: string; readonly host: string }
-  | { readonly kind: 'app-control'; readonly action: string; readonly application: string },
+  | { readonly kind: 'app-control'; readonly action: string; readonly application: string }
+  | { readonly kind: 'mcp'; readonly server: string; readonly tool: string },
 ): string {
   const name = (path: string): string => path.split('/').filter(Boolean).at(-1) ?? path;
   switch (proposal.kind) {
@@ -362,6 +363,8 @@ export function approvalQuestion(proposal:
       return `Ye web page kholun?`;
     case 'web':
       return proposal.operation === 'search' ? `${proposal.host} par search karun?` : `${proposal.host} ka page padhun?`;
+    case 'mcp':
+      return `${proposal.server} ka ${proposal.tool} tool chalaun?`;
     default:
       return `${proposal.application} ko ${proposal.action} karun?`;
   }

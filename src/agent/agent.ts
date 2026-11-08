@@ -169,7 +169,7 @@ export function describeToolCall(toolId: string, args: Readonly<Record<string, u
       return 'Reading the page in Chrome';
     }
     default:
-      return `Using ${toolId}`;
+      return toolId.startsWith('mcp_') ? `Using ${toolId.slice(4).replace(/_/u, ': ').replace(/_/gu, ' ')} (MCP)` : `Using ${toolId}`;
   }
 }
 
@@ -212,6 +212,11 @@ function verifiedAction(
   if (toolId === 'check_problems') {
     if (result.status === 'rejected') return { ok: false, text: `You rejected running \`${clip(String(result.command ?? ''), 60)}\`` };
     return { ok: result.exitCode === 0, text: `Checked for problems with \`${clip(String(result.command ?? ''), 60)}\` — ${String(result.summary ?? '')}` };
+  }
+  if (toolId.startsWith('mcp_')) {
+    const what = `${String(result.tool ?? toolId)} on ${String(result.server ?? 'MCP')}`;
+    if (result.status === 'rejected') return { ok: false, text: `You rejected ${what}` };
+    return { ok: result.status === 'done', text: `Used ${what} (MCP)${result.status === 'error' ? ' — it reported an error' : ''}` };
   }
   if (toolId === 'git_commit') {
     if (result.status === 'rejected') return { ok: false, text: 'You rejected the commit' };
@@ -792,7 +797,7 @@ async function runAgentTask(
         argumentKeys: Object.keys(call.arguments).sort(),
       });
 
-      if (attempt > 2 && !MUTATING_TOOLS.has(call.toolId)) {
+      if (attempt > 2 && !MUTATING_TOOLS.has(call.toolId) && !call.toolId.startsWith('mcp_')) {
         session.add({
           role: 'tool',
           toolId: call.toolId,
