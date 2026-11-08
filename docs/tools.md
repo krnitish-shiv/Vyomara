@@ -129,6 +129,9 @@ listed in Verified actions, marked "(always-allowed)". See
 | `multi_edit` | Reviewed diff | Several `{old_text, new_text, replace_all?}` edits to one file, applied in order and reviewed as one diff. |
 | `git_info` | None | Read-only git without a shell: `status`, `diff` (`staged`, `target` file/branch), `log`, `show`, `branches`. Targets cannot be options. |
 | `git_commit` | Exact command | `git add -A` (or the listed files) and `git commit -m …`, shown before it runs. Never pushes. |
+| `git_branch` | Changes: exact command | `list` (no approval), `create` (optionally `from`), `switch`, `delete` (merged only, `-d`), `stash`, `stash_pop`. |
+| `git_sync` | Pull/push: exact command | `fetch` (no approval), `pull --ff-only`, `push` (sets upstream the first time). Never forced. |
+| `github` | Writes: exact command, every time | Uses your `gh` login. Read: `pr_list`, `pr_view`, `pr_checks`, `pr_diff`, `issue_list`, `issue_view`, `run_list`, `run_log` (failed steps). Write: `pr_create`, `pr_comment`, `issue_create`, `issue_comment`. |
 | `check_problems` | Exact command | Runs the project's own typecheck/lint script, or `tsc`, `cargo check`, `go vet`, `ruff`, `swift build`, and returns problems as `file:line:column` with a message. |
 | `run_command` with `background: true` | Exact command | Starts a server or watcher that keeps running after the request; returns an id and its first output. |
 | `command_output` | None | `read` new output of a background command, `stop` it, or `list` them. All stop when Vyomara quits. |

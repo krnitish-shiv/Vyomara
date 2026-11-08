@@ -142,6 +142,12 @@ export function describeToolCall(toolId: string, args: Readonly<Record<string, u
       return args.action === 'stop' ? `Stopping background command ${String(args.id ?? '')}` : args.action === 'list' ? 'Listing background commands' : `Reading output of ${String(args.id ?? '')}`;
     case 'check_problems':
       return `Checking ${shortPath(args.path)} for problems`;
+    case 'git_branch':
+      return `Git ${String(args.action ?? 'list').replace('_', ' ')}${args.name ? ` ${clip(String(args.name), 40)}` : ''}`;
+    case 'git_sync':
+      return `Git ${String(args.action ?? 'fetch')}${args.branch ? ` ${clip(String(args.branch), 40)}` : ''}`;
+    case 'github':
+      return `GitHub: ${String(args.action ?? '').replace('_', ' ')}${args.number ? ` #${String(args.number)}` : ''}`;
     case 'git_commit':
       return `Committing “${clip(String(args.message ?? '').split('\n')[0] ?? '', 50)}”`;
     case 'current_time':
@@ -221,6 +227,11 @@ function verifiedAction(
     if (result.status === 'rejected') return { ok: false, text: `You rejected ${what}` };
     return { ok: result.status === 'done', text: `Used ${what} (MCP)${result.status === 'error' ? ' — it reported an error' : ''}` };
   }
+  if ((toolId === 'git_branch' || toolId === 'git_sync' || toolId === 'github') && typeof result.command === 'string') {
+    const command = `\`${clip(result.command, 80)}\``;
+    if (result.status === 'rejected') return { ok: false, text: `You rejected ${command}` };
+    return { ok: result.status === 'done', text: `Ran ${command}${result.status === 'done' ? '' : ` — exit code ${String(result.exitCode)}`}` };
+  }
   if (toolId === 'git_commit') {
     if (result.status === 'rejected') return { ok: false, text: 'You rejected the commit' };
     return result.status === 'committed'
@@ -274,7 +285,7 @@ function verifiedAction(
 const INVALID_CALL_CODES = new Set(['invalid-input', 'input-too-large', 'unknown-tool', 'policy-denied']);
 
 const MUTATING_TOOLS = new Set([
-  'edit_file', 'multi_edit', 'notebook_edit', 'git_commit', 'check_problems', 'write_file', 'create_directory', 'delete_path', 'run_command', 'open_application', 'open_url',
+  'edit_file', 'multi_edit', 'notebook_edit', 'git_commit', 'git_branch', 'git_sync', 'github', 'check_problems', 'write_file', 'create_directory', 'delete_path', 'run_command', 'open_application', 'open_url',
   'fetch_url', 'web_search', 'control_application', 'news_headlines',
   // Scrolling or reading again is a real step, not a repeated mistake.
   'browser',
@@ -287,7 +298,7 @@ const APPLY_CHANGE_NUDGE =
   'You described a code change but did not apply it. Do not ask the user to paste code: make the change yourself with edit_file (the user reviews it before it is written), then verify it. If you have not reproduced the problem yet, do that first.';
 
 /** Tools that change files; withheld when the user asked for no changes. */
-const FILE_CHANGE_TOOLS = new Set(['edit_file', 'multi_edit', 'notebook_edit', 'write_file', 'create_directory', 'delete_path', 'git_commit']);
+const FILE_CHANGE_TOOLS = new Set(['edit_file', 'multi_edit', 'notebook_edit', 'git_branch', 'git_sync', 'write_file', 'create_directory', 'delete_path', 'git_commit']);
 
 /**
  * "don't change anything", "just tell me", "kuch mat badlo", "sirf batao":
@@ -309,7 +320,7 @@ const PLAN_MODE_NOTE =
 
 /** Tools with side effects, refused in plan mode (they stay in the tool list so the cached prompt matches). */
 const PLAN_MODE_BLOCKED = new Set([
-  'edit_file', 'multi_edit', 'notebook_edit', 'write_file', 'create_directory', 'delete_path', 'git_commit', 'run_command',
+  'edit_file', 'multi_edit', 'notebook_edit', 'write_file', 'create_directory', 'delete_path', 'git_commit', 'git_branch', 'git_sync', 'run_command',
   'check_problems', 'open_application', 'open_url', 'control_application', 'browser', 'remember',
 ]);
 

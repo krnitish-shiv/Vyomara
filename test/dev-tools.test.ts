@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import { execFileSync } from 'node:child_process';
-import { mkdtemp, readFile, realpath, rm, writeFile } from 'node:fs/promises';
+import { mkdir, mkdtemp, readFile, realpath, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import test, { type TestContext } from 'node:test';
@@ -151,4 +151,62 @@ test('command permissions match exact commands and safe * prefixes in a folder',
   assert.ok(new ApprovalMemory({ grants: saved.at(-1) ?? [] }).has('git diff', '/Users/me/shop'), 'kept across restarts');
   assert.equal(parseGrantId('command:relative\tls'), undefined);
   assert.equal(parseGrantId('command:/Users/me\t*'), undefined, 'a bare * is never allowed');
+});
+
+test('git_branch and git_sync work through approvals and never force', async t => {
+  const root = await folder(t);
+  const remote = join(root, 'remote.git');
+  const repo = join(root, 'repo');
+  execFileSync('git', ['init', '-q', '--bare', remote]);
+  execFileSync('git', ['init', '-q', '-b', 'main', repo]);
+  const run = (...args: string[]): string => execFileSync('git', args, { cwd: repo, encoding: 'utf8' });
+  run('config', 'user.email', 'test@example.com');
+  run('config', 'user.name', 'Test');
+  run('remote', 'add', 'origin', remote);
+  await writeFile(join(repo, 'a.txt'), '1\n');
+  run('add', '.');
+  run('commit', '-q', '-m', 'First');
+  const asked: string[] = [];
+  const registry = new ToolRegistry();
+  registerGitTools(registry, configFor(root), {
+    approval: { async request(action: ActionProposal) { asked.push(action.kind === 'command' ? action.command : action.kind); return true; } },
+    commandRunner: new ShellCommandRunner(),
+  } as unknown as ActionToolPorts);
+  const branch = registry.get('git_branch');
+  assert.equal((await branch?.run({ path: repo, action: 'create', name: 'feature/cart' }, signal) as Record<string, unknown>).status, 'done');
+  assert.equal(run('rev-parse', '--abbrev-ref', 'HEAD').trim(), 'feature/cart');
+  assert.match(String((await branch?.run({ path: repo, action: 'list' }, signal) as Record<string, unknown>).output), /feature\/cart/u);
+  assert.equal(branch?.validateInput({ path: repo, action: 'create', name: '--force' }), false);
+  const sync = registry.get('git_sync');
+  assert.equal((await sync?.run({ path: repo, action: 'push' }, signal) as Record<string, unknown>).status, 'done');
+  assert.deepEqual(asked, [`git switch -c 'feature/cart'`, `git push -u 'origin' 'feature/cart'`]);
+  assert.match(execFileSync('git', ['branch', '--list'], { cwd: remote, encoding: 'utf8' }), /feature\/cart/u);
+  assert.ok(!asked.some(command => /--force|-f\b/u.test(command)));
+});
+
+test('the github tool reads without approval and shows every write first', async t => {
+  const root = await folder(t);
+  execFileSync('git', ['init', '-q', '-b', 'main', root]);
+  // A stand-in gh that records its arguments.
+  const bin = join(root, 'bin');
+  await mkdir(bin);
+  await writeFile(join(bin, 'gh'), '#!/bin/sh\necho "gh $*"\n', { mode: 0o755 });
+  const path = process.env.PATH;
+  process.env.PATH = `${bin}:${path ?? ''}`;
+  t.after(() => { process.env.PATH = path; });
+  const asked: string[] = [];
+  const registry = new ToolRegistry();
+  registerGitTools(registry, configFor(root), {
+    approval: { async request(action: ActionProposal) { asked.push(action.kind === 'command' ? action.command : action.kind); return false; } },
+    commandRunner: new ShellCommandRunner(),
+  } as unknown as ActionToolPorts);
+  const github = registry.get('github');
+  const checks = await github?.run({ path: root, action: 'pr_checks', number: 12 }, signal) as Record<string, unknown>;
+  assert.equal(checks.output, 'gh pr checks 12');
+  assert.deepEqual(asked, [], 'reading asks nothing');
+  const create = await github?.run({ path: root, action: 'pr_create', title: "Fix cart's total", body: 'Adds prices.' }, signal) as Record<string, unknown>;
+  assert.equal(create.status, 'rejected');
+  assert.deepEqual(asked, [`gh pr create --title 'Fix cart'\\''s total' --body 'Adds prices.'`]);
+  assert.match(github?.inputError?.({ path: root, action: 'issue_comment' }) ?? '', /number is required/u);
+  assert.equal(github?.normalizeInput?.({ path: root, action: 'issue_view', number: '#7' }) && (github.normalizeInput({ path: root, action: 'issue_view', number: '#7' }) as Record<string, unknown>).number, 7);
 });
