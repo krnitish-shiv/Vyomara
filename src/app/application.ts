@@ -85,6 +85,8 @@ export interface RequestOptions {
   readonly onPlan?: (steps: readonly PlanStep[]) => void;
   /** The request was spoken; replies should be short enough to read aloud. */
   readonly voice?: boolean;
+  readonly planOnly?: boolean;
+  readonly images?: readonly string[];
   readonly persona?: PersonaId;
   readonly includeFilesystemTools?: boolean;
   readonly fileOperationApproval?: FileOperationApprovalPort;
@@ -166,6 +168,8 @@ export async function runRequest(
         ...(options.onToolActivity ? { onToolActivity: options.onToolActivity } : {}),
         ...(options.onPlan ? { onPlan: options.onPlan } : {}),
         ...(options.voice ? { voice: true } : {}),
+        ...(options.planOnly ? { planOnly: true } : {}),
+        ...(options.images && options.images.length > 0 ? { images: options.images } : {}),
         ...(options.persona ? { persona: options.persona } : {}),
         memory,
       });

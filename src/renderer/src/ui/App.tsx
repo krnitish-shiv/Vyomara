@@ -67,12 +67,50 @@ interface ChatMessage {
   readonly role: 'user' | 'assistant';
   readonly content: string;
   readonly failed?: boolean;
+  /** Pictures sent with a user message (data URLs, shown as thumbnails). */
+  readonly images?: readonly string[];
+  /** A reply written in plan mode: offers "Go ahead". */
+  readonly plan?: boolean;
+}
+
+interface Attachment {
+  readonly id: string;
+  readonly name: string;
+  /** Base64 without the data: prefix, as sent to the model. */
+  readonly base64: string;
+  readonly dataUrl: string;
+}
+
+const MAX_ATTACHMENTS = 4;
+const MAX_ATTACHMENT_BYTES = 10 * 1024 * 1024;
+
+function readImage(file: File): Promise<Attachment> {
+  return new Promise((resolve, reject) => {
+    if (!/^image\/(?:png|jpeg|webp|gif)$/u.test(file.type)) {
+      reject(new Error('Only PNG, JPEG, WebP, or GIF pictures can be attached.'));
+      return;
+    }
+    if (file.size > MAX_ATTACHMENT_BYTES) {
+      reject(new Error('Pictures must be under 10 MB.'));
+      return;
+    }
+    const reader = new FileReader();
+    reader.onerror = () => reject(new Error('The picture could not be read.'));
+    reader.onload = () => {
+      const dataUrl = String(reader.result);
+      resolve({ id: crypto.randomUUID(), name: file.name || 'pasted picture', base64: dataUrl.slice(dataUrl.indexOf(',') + 1), dataUrl });
+    };
+    reader.readAsDataURL(file);
+  });
 }
 
 export function App() {
   const [provider, setProvider] = useState<DesktopProviderStatus>();
   const [providerError, setProviderError] = useState<string>();
   const [messages, setMessages] = useState<ChatMessage[]>([]);
+  const [attachments, setAttachments] = useState<Attachment[]>([]);
+  const [planMode, setPlanMode] = useState(false);
+  const imageInput = useRef<HTMLInputElement>(null);
   /** The newest request's file changes that can still be undone. */
   const [undoStatus, setUndoStatus] = useState<DesktopUndoStatus>({ available: false, paths: [] });
   const [undoing, setUndoing] = useState(false);
@@ -439,10 +477,29 @@ export function App() {
     return () => window.removeEventListener('keydown', handleEscape);
   }, [historyOpen, modelsOpen, permissionsOpen, memoriesOpen]);
 
-  async function submitPrompt(value: string, speakResponse = false): Promise<void> {
-    const trimmed = value.trim();
+  async function addAttachments(files: readonly File[]): Promise<void> {
+    const room = MAX_ATTACHMENTS - attachments.length;
+    if (room <= 0) {
+      setRequestError(`Up to ${MAX_ATTACHMENTS} pictures can be attached to one message.`);
+      return;
+    }
+    try {
+      const added = await Promise.all(files.slice(0, room).map(readImage));
+      setAttachments(current => [...current, ...added].slice(0, MAX_ATTACHMENTS));
+      setRequestError(undefined);
+    } catch (error) {
+      setRequestError(error instanceof Error ? error.message : 'The picture could not be attached.');
+    }
+  }
+
+  async function submitPrompt(value: string, speakResponse = false, options: { readonly planOnly?: boolean; readonly images?: readonly Attachment[] } = {}): Promise<void> {
+    const sentImages = options.images ?? [];
+    const trimmed = value.trim() || (sentImages.length > 0 ? 'Look at the attached picture.' : '');
     if (!trimmed || requestPending) return;
+    const planOnly = options.planOnly === true;
     setPrompt('');
+    setAttachments([]);
+    if (planOnly) setPlanMode(false);
     setRequestError(undefined);
     // Sending a message returns to the latest reply.
     followLatest.current = true;
@@ -450,7 +507,8 @@ export function App() {
     setMessages(current => [...current, {
       id: Date.now(),
       role: 'user',
-      content: trimmed,
+      content: planOnly ? `${trimmed}\n\n(Plan first)` : trimmed,
+      ...(sentImages.length > 0 ? { images: sentImages.map(image => image.dataUrl) } : {}),
     }]);
 
     // "undo karo": the app puts back the last changes itself; the model is not asked.
@@ -471,16 +529,19 @@ export function App() {
         requestId,
         ...(sessionId ? { sessionId } : {}),
         ...(speakResponse ? { voice: true } : {}),
+        ...(planOnly ? { planOnly: true } : {}),
+        ...(sentImages.length > 0 ? { images: sentImages.map(image => image.base64) } : {}),
       });
       setSessionId(result.sessionId);
       setMessages(current => current.some(message => message.id === requestId)
         ? current.map(message => message.id === requestId
-          ? { ...message, content: result.response }
+          ? { ...message, content: result.response, ...(planOnly ? { plan: true } : {}) }
           : message)
         : [...current, {
           id: requestId,
           role: 'assistant',
           content: result.response,
+          ...(planOnly ? { plan: true } : {}),
         }]);
       if (speakResponse) speak(speechText(result.response));
     } catch (error) {
@@ -726,11 +787,11 @@ export function App() {
   async function submit(event: FormEvent<HTMLFormElement>): Promise<void> {
     event.preventDefault();
     if (dictationRef.current) await stopDictation();
-    const trimmed = prompt.trim();
+    const trimmed = prompt.trim() || (attachments.length > 0 ? 'picture' : '');
     const restoreFocus = Boolean(trimmed);
     shouldRestoreComposerFocus.current = restoreFocus;
     setComposerFocusRequest(current => current + 1);
-    await submitPrompt(prompt);
+    await submitPrompt(prompt, false, { planOnly: planMode, images: attachments });
     if (restoreFocus) {
       shouldRestoreComposerFocus.current = false;
       window.requestAnimationFrame(() => promptInput.current?.focus());
@@ -1481,9 +1542,22 @@ export function App() {
                   {message.role === 'user' ? 'Y' : 'V'}
                 </div>
                 <div className="message-content">
+                  {message.images && message.images.length > 0 && (
+                    <div className="message-images">
+                      {message.images.map((image, index) => <img key={index} src={image} alt={`Attached picture ${index + 1}`} />)}
+                    </div>
+                  )}
                   {message.role === 'assistant' && !message.failed
                     ? <MessageContent text={message.content} />
                     : <p className="message-text">{message.content}</p>}
+                  {message.plan && !message.failed && message.id === messages.at(-1)?.id && !requestPending && (
+                    <div className="plan-actions">
+                      <button type="button" className="plan-go" onClick={() => void submitPrompt('Go ahead with the plan.')}>
+                        <span aria-hidden="true">▶</span> Go ahead
+                      </button>
+                      <small>or type what to change in the plan</small>
+                    </div>
+                  )}
                   {undoStatus.available && undoStatus.requestId === message.id && !requestPending && (
                     <button
                       type="button"
@@ -1550,7 +1624,17 @@ export function App() {
               ↓ Latest
             </button>
           )}
-          <form className={`composer${composerMood ? ` composer-${composerMood}` : ''}${liveTurn && !prompt ? ' composer-hearing' : ''}`} onSubmit={event => void submit(event)}>
+          <form
+            className={`composer${composerMood ? ` composer-${composerMood}` : ''}${liveTurn && !prompt ? ' composer-hearing' : ''}`}
+            onSubmit={event => void submit(event)}
+            onDragOver={event => { if ([...event.dataTransfer.items].some(item => item.type.startsWith('image/'))) event.preventDefault(); }}
+            onDrop={event => {
+              const files = [...event.dataTransfer.files].filter(file => file.type.startsWith('image/'));
+              if (files.length === 0) return;
+              event.preventDefault();
+              void addAttachments(files);
+            }}
+          >
             <label className="visually-hidden" htmlFor="prompt">Message {assistantName}</label>
             <textarea
               ref={promptInput}
@@ -1563,6 +1647,12 @@ export function App() {
               rows={1}
               maxLength={32000}
               disabled={requestPending}
+              onPaste={event => {
+                const files = [...event.clipboardData.files].filter(file => file.type.startsWith('image/'));
+                if (files.length === 0) return;
+                event.preventDefault();
+                void addAttachments(files);
+              }}
               onKeyDown={event => {
                 if (event.key === 'Enter' && !event.shiftKey) {
                   event.preventDefault();
@@ -1602,13 +1692,57 @@ export function App() {
                 <button
                   className="send-button"
                   type="submit"
-                  disabled={requestPending || !prompt.trim()}
+                  disabled={requestPending || (!prompt.trim() && attachments.length === 0)}
                   aria-label="Send message"
                 >
                   <svg viewBox="0 0 24 24" aria-hidden="true">
                     <path d="M12 19V5m-7 7 7-7 7 7" />
                   </svg>
                 </button>
+            </div>
+            <div className="composer-tools">
+              <input
+                ref={imageInput}
+                type="file"
+                accept="image/png,image/jpeg,image/webp,image/gif"
+                multiple
+                hidden
+                onChange={event => {
+                  void addAttachments([...(event.target.files ?? [])]);
+                  event.target.value = '';
+                }}
+              />
+              <button
+                type="button"
+                className="composer-tool"
+                onClick={() => imageInput.current?.click()}
+                disabled={requestPending || attachments.length >= MAX_ATTACHMENTS}
+                title="Attach a screenshot or photo (or paste / drop it here). Needs a model marked Vision."
+              >
+                <svg viewBox="0 0 24 24" aria-hidden="true"><rect x="3.5" y="5" width="17" height="14" rx="2.5" /><circle cx="9" cy="10" r="1.8" /><path d="m4.5 17.5 5-5 3.5 3.5 2.5-2.5 4 4" /></svg>
+                Picture
+              </button>
+              <button
+                type="button"
+                className={`composer-tool${planMode ? ' composer-tool-active' : ''}`}
+                aria-pressed={planMode}
+                onClick={() => setPlanMode(current => !current)}
+                disabled={requestPending}
+                title={`${assistantName} looks around and replies with a plan first; nothing is changed until you say go ahead.`}
+              >
+                <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M8 6h11M8 12h11M8 18h11" /><path d="m3.5 6 1 1 2-2M3.5 12l1 1 2-2M3.5 18l1 1 2-2" /></svg>
+                Plan first
+              </button>
+              {attachments.length > 0 && (
+                <ul className="composer-attachments" aria-label="Attached pictures">
+                  {attachments.map(attachment => (
+                    <li key={attachment.id}>
+                      <img src={attachment.dataUrl} alt={attachment.name} />
+                      <button type="button" aria-label={`Remove ${attachment.name}`} onClick={() => setAttachments(current => current.filter(item => item.id !== attachment.id))}>×</button>
+                    </li>
+                  ))}
+                </ul>
+              )}
             </div>
             {(voiceError || voiceDownloading) && (
               <p className={`composer-voice-status${voiceError ? ' composer-voice-error' : ''}`} role={voiceError ? 'alert' : 'status'}>

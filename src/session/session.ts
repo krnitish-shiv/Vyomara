@@ -6,7 +6,7 @@ export interface SessionToolCall {
 }
 
 export type SessionMessage =
-  | { readonly role: 'user'; readonly content: string }
+  | { readonly role: 'user'; readonly content: string; readonly images?: readonly string[] }
   | { readonly role: 'assistant'; readonly content: string; readonly kind?: never }
   | {
     readonly role: 'assistant';

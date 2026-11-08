@@ -890,3 +890,28 @@ body.pip-body #root { height: 100vh; }
 .pip-toggle-input:checked ~ .pip-toggle-switch::after { transform: translateX(11px); }
 .pip-toggle:has(.pip-toggle-input:not(:checked)) .pip-toggle-icon { background: rgba(255, 255, 255, .05); color: #6c7896; }
 .side-nav .pip-toggle + .side-nav-new-chat { margin-top: 0; }
+
+/* Composer tools: attach a picture, plan first. */
+.composer-tools { grid-column: 1 / -1; grid-row: 2; display: flex; flex-wrap: wrap; align-items: center; gap: 6px; margin-top: 6px; }
+.composer-tool { display: inline-flex; align-items: center; gap: 5px; height: 24px; padding: 0 9px; border: 1px solid rgba(120, 150, 230, .2); border-radius: 999px; background: rgba(255, 255, 255, .03); color: #93a4cc; font: inherit; font-size: 10.5px; cursor: pointer; transition: border-color .16s ease, background .16s ease, color .16s ease; }
+.composer-tool svg { width: 13px; height: 13px; fill: none; stroke: currentColor; stroke-width: 1.8; stroke-linecap: round; stroke-linejoin: round; }
+.composer-tool:hover:not(:disabled) { border-color: rgba(126, 158, 238, .55); background: rgba(70, 100, 190, .2); color: #eef3ff; }
+.composer-tool:disabled { opacity: .45; cursor: default; }
+.composer-tool-active { border-color: rgba(150, 120, 255, .7); background: linear-gradient(90deg, rgba(43, 140, 255, .22), rgba(106, 77, 255, .28)); color: #e6e0ff; }
+.composer-attachments { display: flex; gap: 6px; margin: 0 0 0 4px; padding: 0; list-style: none; }
+.composer-attachments li { position: relative; width: 38px; height: 38px; }
+.composer-attachments img { width: 100%; height: 100%; object-fit: cover; border: 1px solid rgba(120, 150, 230, .35); border-radius: 8px; }
+.composer-attachments button { position: absolute; top: -6px; right: -6px; width: 16px; height: 16px; display: grid; place-items: center; padding: 0; border: 0; border-radius: 50%; background: #2a3247; color: #dfe6f7; font-size: 11px; line-height: 1; cursor: pointer; }
+.composer-attachments button:hover { background: #b23a52; }
+
+/* Pictures in a sent message, and the plan-mode "Go ahead". */
+.message-images { display: flex; flex-wrap: wrap; gap: 6px; margin-bottom: 6px; }
+.message-images img { max-width: 180px; max-height: 140px; border: 1px solid rgba(120, 150, 230, .3); border-radius: 10px; object-fit: cover; }
+.plan-actions { display: flex; align-items: center; gap: 10px; margin-top: 10px; }
+.plan-actions small { color: #7486ab; font-size: 10.5px; }
+.plan-go { display: inline-flex; align-items: center; gap: 6px; height: 30px; padding: 0 14px; border: 0; border-radius: 9px; background: linear-gradient(90deg, #2b8cff, #6a4dff); color: #fff; font: inherit; font-size: 12px; font-weight: 600; cursor: pointer; box-shadow: 0 4px 14px rgba(60, 110, 255, .3); }
+.plan-go:hover { filter: brightness(1.1); }
+/* The tools row sits under the text in the first column; the buttons span both rows. */
+.composer .composer-rail { grid-row: 1 / span 2; }
+.composer .composer-tools { grid-column: 1; margin-top: 4px; }
+.composer textarea { min-height: 46px; }

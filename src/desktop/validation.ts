@@ -81,8 +81,10 @@ export function parseDesktopChatRequest(
   const record = value as Record<string, unknown>;
   const keys = Object.keys(record);
   if (
-    keys.some(key => key !== 'prompt' && key !== 'sessionId' && key !== 'requestId' && key !== 'voice') ||
+    keys.some(key => !['prompt', 'sessionId', 'requestId', 'voice', 'planOnly', 'images'].includes(key)) ||
     (record.voice !== undefined && typeof record.voice !== 'boolean') ||
+    (record.planOnly !== undefined && typeof record.planOnly !== 'boolean') ||
+    (record.images !== undefined && !validImages(record.images)) ||
     typeof record.prompt !== 'string' ||
     record.prompt.trim() === '' ||
     record.prompt.length > maxInputChars ||
@@ -99,7 +101,23 @@ export function parseDesktopChatRequest(
     requestId: record.requestId,
     ...(record.sessionId === undefined ? {} : { sessionId: record.sessionId }),
     ...(record.voice === true ? { voice: true } : {}),
+    ...(record.planOnly === true ? { planOnly: true } : {}),
+    ...(Array.isArray(record.images) && record.images.length > 0 ? { images: record.images as string[] } : {}),
   };
+}
+
+export const MAX_CHAT_IMAGES = 4;
+/** About 10 MB of picture data per image. */
+const MAX_IMAGE_BASE64_CHARS = 14_000_000;
+
+/** Base64 pictures only: PNG, JPEG, GIF, or WebP, checked by their first bytes. */
+function validImages(value: unknown): boolean {
+  if (!Array.isArray(value) || value.length > MAX_CHAT_IMAGES) return false;
+  return value.every(item => typeof item === 'string'
+    && item.length > 16
+    && item.length <= MAX_IMAGE_BASE64_CHARS
+    && /^[A-Za-z0-9+/]+={0,2}$/u.test(item)
+    && /^(?:iVBORw0KGgo|\/9j\/|R0lGOD|UklGR)/u.test(item));
 }
 
 /**

@@ -8,6 +8,10 @@ export interface DesktopChatRequest {
   readonly sessionId?: string;
   /** Spoken request: the reply will be read aloud, so keep it short. */
   readonly voice?: boolean;
+  /** Plan mode: investigate with read-only tools and reply with a plan; change nothing. */
+  readonly planOnly?: boolean;
+  /** Attached pictures (screenshots, photos) as base64 PNG/JPEG/WebP, for vision models. */
+  readonly images?: readonly string[];
 }
 
 export interface DesktopChatTextChunk {

@@ -54,6 +54,10 @@ export interface AgentOptions {
   readonly onPlan?: (steps: readonly PlanStep[]) => void;
   /** Spoken request: ask for a short reply (fewer tokens, faster, and pleasant to hear). */
   readonly voice?: boolean;
+  /** Plan mode: look around with read-only tools and reply with a plan; nothing is changed or run. */
+  readonly planOnly?: boolean;
+  /** Pictures attached to this request (base64), sent with it to a vision model. */
+  readonly images?: readonly string[];
   /** Which assistant (name, gender) answers. */
   readonly persona?: PersonaId;
   /** Lasting facts from earlier conversations, shown in the system prompt. */
@@ -284,6 +288,15 @@ export function forbidsChanges(prompt: string): boolean {
 
 /** Tools that read the web in the background. */
 const WEB_TOOLS = new Set(['web_search', 'fetch_url', 'news_headlines', 'browser', 'weather', 'currency_convert', 'software_version']);
+
+const PLAN_MODE_NOTE =
+  '(Plan mode: do not change, run, or open anything yet. Investigate with read-only tools as much as needed, then reply with a short numbered plan: each step names the file or command and what will change and why, followed by risks or questions. Then stop; the user will say go ahead.)';
+
+/** Tools with side effects, refused in plan mode (they stay in the tool list so the cached prompt matches). */
+const PLAN_MODE_BLOCKED = new Set([
+  'edit_file', 'multi_edit', 'write_file', 'create_directory', 'delete_path', 'git_commit', 'run_command',
+  'check_problems', 'open_application', 'open_url', 'control_application', 'browser', 'remember',
+]);
 
 const LOOK_IT_UP_NUDGE =
   'This question needs current information, and your own knowledge is out of date. Do not answer from memory: look it up now with the right tool (software_version for the latest version of a library or tool, weather, currency_convert, current_time, news_headlines, or web_search then fetch_url), then answer from what it returns, in the language of the user\'s message.';
@@ -570,6 +583,7 @@ async function runAgentTask(
   let attemptedEdit = false;
   let usedWebTool = false;
   const links = new LinkAliases();
+  const images = options.images ?? [];
   // A long conversation keeps its early turns as a summary instead of losing them.
   const summary = await summarizeEarlierTurns(session, budgetChars, system, modelTools, options.provider, config, signal);
   const canEdit = modelTools.some(tool => tool.id === 'edit_file' || tool.id === 'write_file');
@@ -598,6 +612,10 @@ async function runAgentTask(
     return response;
   };
 
+  if (images.length > 0 && options.provider.supportsVision && !await options.provider.supportsVision().catch(() => true)) {
+    return finish('The selected model cannot see pictures. Choose a model marked **Vision** in the Models panel (for example `qwen2.5vl:7b` or `gemma3:12b`), then send the picture again.', 0, true);
+  }
+
   for (let iteration = 1; iteration <= config.maxAgentIterations; iteration += 1) {
     if (signal.aborted) throw new AgentError('Operation cancelled.', 'cancelled');
     const visible = summary ? [summary.message, ...session.messages().slice(summary.cut)] : session.messages();
@@ -607,16 +625,23 @@ async function runAgentTask(
         // The model sees long URLs as short aliases it can copy without mistakes.
         : message.role === 'tool' ? { ...message, content: links.shorten(message.content) } : message);
     // A spoken request carries its note in the message, keeping the system prompt cacheable.
-    let spokenIndex = -1;
-    if (options.voice) {
+    // Notes and pictures travel with this request's message, keeping the system prompt cacheable.
+    const notes = [
+      ...(options.voice ? [spokenRequestNote(options.persona)] : []),
+      ...(options.planOnly ? [PLAN_MODE_NOTE] : []),
+    ];
+    let promptIndex = -1;
+    if (notes.length > 0 || images.length > 0) {
       for (let index = fitted.length - 1; index >= 0; index -= 1) {
         const message = fitted[index];
-        if (message?.role === 'user' && message.content === prompt) { spokenIndex = index; break; }
+        if (message?.role === 'user' && message.content === prompt) { promptIndex = index; break; }
       }
     }
-    const withNote = spokenIndex < 0
+    const withNote = promptIndex < 0
       ? fitted
-      : fitted.map((message, index) => index === spokenIndex ? { ...message, content: `${message.content}\n\n${spokenRequestNote(options.persona)}` } : message);
+      : fitted.map((message, index) => index === promptIndex
+        ? { role: 'user' as const, content: [message.content, ...notes].join('\n\n'), ...(images.length > 0 ? { images } : {}) }
+        : message);
     const messages = pendingNudge
       ? [...withNote, { role: 'user' as const, content: pendingNudge }]
       : withNote;
@@ -668,7 +693,8 @@ async function runAgentTask(
     if (response.kind === 'final') {
       // Local models sometimes describe their next step and stop. Nudge them
       // (at most twice) to actually continue instead of ending the task early.
-      const canNudge = continuationNudges < 2 &&
+      // A plan is the expected answer in plan mode: no "keep going" nudges.
+      const canNudge = !options.planOnly && continuationNudges < 2 &&
         iteration < config.maxAgentIterations &&
         toolCalls < config.maxToolCalls;
       const unappliedChange = canEdit &&
@@ -735,6 +761,15 @@ async function runAgentTask(
             ok: false,
             error: 'You already made this exact call. Use the earlier result above, or try a different approach.',
           }),
+        });
+        continue;
+      }
+
+      if (options.planOnly && PLAN_MODE_BLOCKED.has(call.toolId)) {
+        session.add({
+          role: 'tool',
+          toolId: call.toolId,
+          content: JSON.stringify({ ok: false, error: 'Plan mode: nothing may be changed, run, or opened yet. Finish investigating with read-only tools, then reply with the plan and wait for the user to say go ahead.' }),
         });
         continue;
       }
