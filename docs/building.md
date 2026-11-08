@@ -11,6 +11,9 @@ Mac app, and publish a release.
 - Optional, for voice: `brew install whisper.cpp`
 
 Run `pnpm install` once after cloning, and again whenever `pnpm-lock.yaml` changes.
+Newer pnpm versions skip dependency install scripts, so Electron's app may not
+be downloaded by `pnpm install`; `pnpm desktop`, `pnpm package:mac`, and
+`pnpm test:desktop-ui` download it on first use (`scripts/ensure-electron.mjs`).
 
 ## Commands
 

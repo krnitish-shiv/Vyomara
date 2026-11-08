@@ -6,6 +6,7 @@ import { registerActionTools, registerWebTools } from './action-tools.ts';
 import type { ActionToolPorts } from './action-tools.ts';
 import { registerPlanTool } from './plan-tool.ts';
 import { registerMemoryTool } from './memory-tool.ts';
+import { registerUtilityTools } from './utility-tools.ts';
 import type { MemoryStore } from '../storage/memory-store.ts';
 
 export interface ToolRegistryOptions {
@@ -33,5 +34,7 @@ export function createDefaultToolRegistry(
     registerActionTools(registry, config, options.actions);
     registerWebTools(registry, config, options.actions);
   }
+  // Clock, calculator, units, dates, and Mac status always; weather, rates, and versions with web access.
+  registerUtilityTools(registry, options.actions);
   return registry;
 }

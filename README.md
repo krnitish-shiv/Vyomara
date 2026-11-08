@@ -54,6 +54,9 @@ your Mac.**
 | *"aaj ki top news kya hai?"* | Reads current headlines and answers in the chat, with real links. |
 | *"react.dev/blog padh ke batao latest post kya hai"* | Reads the page itself and answers with a link. |
 | *"VS Code full screen karo"* | Focuses, hides, minimizes, maximizes, or quits apps. Quitting always asks. |
+| *"react native ka latest version kya hai?"* | Asks the npm registry directly and answers with the version and release date. |
+| *"Patna ka mausam kaisa hai?"* / *"100 dollar kitne rupaye?"* | Live weather and forecast; today's exchange rate. |
+| *"abhi London mein kitne baje hain?"* / *"18% of 2499?"* | Exact time anywhere, exact maths, unit and date conversions, and this Mac's battery and disk. |
 | *"undo karo"* | Puts back the last request's approved file changes. |
 | *"yaad rakhna: mera main project KeylessRN hai"* | Remembers it for future conversations (see **Memories**). |
 

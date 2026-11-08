@@ -119,6 +119,22 @@ export function describeToolCall(toolId: string, args: Readonly<Record<string, u
       return `Reading ${clip(String(args.url ?? ''), 60)}`;
     case 'web_search':
       return `Searching the web for “${clip(String(args.query ?? ''), 50)}”`;
+    case 'current_time':
+      return args.timezone ? `Checking the time in ${clip(String(args.timezone), 30)}` : 'Checking the time';
+    case 'calculate':
+      return `Calculating ${clip(String(args.expression ?? ''), 50)}`;
+    case 'convert_units':
+      return `Converting ${clip(String(args.value ?? ''), 15)} ${clip(String(args.from ?? ''), 12)} to ${clip(String(args.to ?? ''), 12)}`;
+    case 'date_math':
+      return 'Working out dates';
+    case 'system_info':
+      return 'Checking this Mac';
+    case 'weather':
+      return `Getting the weather for ${clip(String(args.place ?? ''), 40)}`;
+    case 'currency_convert':
+      return `Converting ${clip(String(args.amount ?? ''), 15)} ${String(args.from ?? '').toUpperCase()} to ${String(args.to ?? '').toUpperCase()}`;
+    case 'software_version':
+      return `Checking the latest version of ${clip(String(args.name ?? ''), 40)}`;
     case 'news_headlines':
       return `Getting the news${args.topic ? ` about “${clip(String(args.topic), 40)}”` : ''}`;
     case 'browser': {
@@ -245,7 +261,26 @@ export function forbidsChanges(prompt: string): boolean {
 }
 
 /** Tools that read the web in the background. */
-const WEB_TOOLS = new Set(['web_search', 'fetch_url', 'news_headlines', 'browser']);
+const WEB_TOOLS = new Set(['web_search', 'fetch_url', 'news_headlines', 'browser', 'weather', 'currency_convert', 'software_version']);
+
+const LOOK_IT_UP_NUDGE =
+  'This question needs current information, and your own knowledge is out of date. Do not answer from memory: look it up now with the right tool (software_version for the latest version of a library or tool, weather, currency_convert, current_time, news_headlines, or web_search then fetch_url), then answer from what it returns, in the language of the user\'s message.';
+
+const DO_NOT_ASK_NUDGE =
+  'Do not ask the user whether to fetch, read, or search: they already asked for the answer. Do it now (fetch_url the most relevant result, or search again with better words), then answer with the facts and the source link.';
+
+/** Questions whose answer changes over time: never answer them from the model's memory. */
+export function asksForCurrentInfo(prompt: string): boolean {
+  return /\b(?:latest|newest|recent(?:ly)?|today|tonight|right now|this (?:week|month|year)|current (?:version|price|rate|news|time|weather|score)|price|prices|(?:exchange|interest|gold|silver|petrol|diesel|dollar|share|stock) rates?|version|(?:live|match|cricket) score|weather|forecast|news|aaj|abhi ka|kal ka|mausam|daam|bhav|keemat)\b/iu.test(prompt);
+}
+
+/** "Would you like me to fetch/read/check…?" after the user already asked for the answer. */
+export function offersToLookItUp(text: string): boolean {
+  const tail = text.trim().split(/\n+/u).slice(-3).join(' ');
+  if (/chrome|browser/iu.test(tail)) return false; // Offering the visible browser is intended; it needs the user's go-ahead.
+  return /\b(?:would you like me to|do you want me to|shall i|should i|i can (?:also )?(?:attempt to |try to )?|if you(?:'d| would)? like,? i can|let me know if you(?:'d| would)? like me to)\s*(?:fetch|read|check|look|search|get|find|open the (?:article|page|link))/iu.test(tail)
+    || /\b(?:kya main|main aapke liye)\b.{0,40}\b(?:fetch|padh|check|search|dhoondh)/iu.test(tail);
+}
 
 const USE_THE_WEB_NUDGE =
   'You do have web access without the browser: call web_search (or news_headlines for news, fetch_url for a known page) now, then answer the user\'s question from what you find. Do not repeat earlier errors. Reply in the language of the user\'s message.';
@@ -566,11 +601,20 @@ async function runAgentTask(
         /```[\s\S]*\n[\s\S]*```/u.test(response.text);
       const unfinishedPlan = isUnfinishedPlan(response.text);
       // "I can't access real-time data" while web tools exist and none was tried.
-      const gaveUpOnWeb = !usedWebTool && modelTools.some(tool => WEB_TOOLS.has(tool.id)) && claimsNoWebAccess(response.text);
-      if (canNudge && (unappliedChange || unfinishedPlan || gaveUpOnWeb || announcesNextStep(response.text))) {
+      const hasWebTools = modelTools.some(tool => WEB_TOOLS.has(tool.id));
+      const gaveUpOnWeb = !usedWebTool && hasWebTools && claimsNoWebAccess(response.text);
+      // "Latest React Native version?" answered without a single tool call: from stale memory.
+      const answeredFromMemory = toolCalls === 0 && hasWebTools && asksForCurrentInfo(prompt);
+      const askedToLookItUp = hasWebTools && offersToLookItUp(response.text);
+      if (canNudge && (unappliedChange || unfinishedPlan || gaveUpOnWeb || answeredFromMemory || askedToLookItUp || announcesNextStep(response.text))) {
         continuationNudges += 1;
         session.add({ role: 'assistant', content: response.text });
-        pendingNudge = unappliedChange ? APPLY_CHANGE_NUDGE : unfinishedPlan ? UNFINISHED_PLAN_NUDGE : gaveUpOnWeb ? USE_THE_WEB_NUDGE : CONTINUE_NUDGE;
+        pendingNudge = unappliedChange ? APPLY_CHANGE_NUDGE
+          : unfinishedPlan ? UNFINISHED_PLAN_NUDGE
+          : gaveUpOnWeb ? USE_THE_WEB_NUDGE
+          : answeredFromMemory ? LOOK_IT_UP_NUDGE
+          : askedToLookItUp ? DO_NOT_ASK_NUDGE
+          : CONTINUE_NUDGE;
         continue;
       }
       return finish(response.text, iteration);

@@ -860,6 +860,18 @@ export function registerWebTools(
   registry.register(webSearch);
 }
 
+/**
+ * Words about recency or question phrasing ("latest", "version", "kya hai")
+ * make Wikipedia's full-text search match the wrong articles; the subject
+ * alone ("react native") finds its article. News search keeps the full query.
+ */
+const SEARCH_FILLER = /\b(?:what|which|who|when|where|is|are|was|the|a|an|of|for|in|on|about|tell|me|please|current|currently|latest|newest|new|recent|version|versions|release|released|today|now|available|right|kya|hai|hain|ka|ki|ke|batao|bataiye|abhi|aaj|20\d\d)\b/giu;
+
+export function encyclopediaQuery(query: string): string {
+  const subject = query.replace(SEARCH_FILLER, ' ').replace(/[?!.,]+/gu, ' ').replace(/\s+/gu, ' ').trim();
+  return subject === '' ? query : subject;
+}
+
 /** The approval label for the built-in search, which asks two public sources. */
 export const BUILT_IN_SEARCH_HOSTS = 'wikipedia.org + news.google.com';
 
@@ -873,12 +885,15 @@ export async function builtInSearch(
   fetchRaw: (url: string, signal: AbortSignal) => Promise<string>,
   signal: AbortSignal,
 ): Promise<WebSearchResult[]> {
-  const wiki = `https://en.wikipedia.org/w/api.php?action=query&list=search&format=json&utf8=1&srlimit=5&srsearch=${encodeURIComponent(query)}`;
+  const wikiUrl = (words: string): string => `https://en.wikipedia.org/w/api.php?action=query&list=search&format=json&utf8=1&srlimit=5&srsearch=${encodeURIComponent(words)}`;
   const news = `https://news.google.com/rss/search?q=${encodeURIComponent(query)}&hl=en-IN&gl=IN&ceid=IN:en`;
-  const [wikiText, newsText] = await Promise.all([
-    fetchRaw(wiki, signal).catch(() => ''),
+  const subject = encyclopediaQuery(query);
+  let [wikiText, newsText] = await Promise.all([
+    fetchRaw(wikiUrl(subject), signal).catch(() => ''),
     fetchRaw(news, signal).catch(() => ''),
   ]);
+  // A misspelt leftover word ("availble") can empty the subject search: try the whole query instead.
+  if (subject !== query && !/"title"/u.test(wikiText)) wikiText = await fetchRaw(wikiUrl(query), signal).catch(() => wikiText);
   const wikiResults: WebSearchResult[] = [];
   try {
     const payload = JSON.parse(wikiText) as { query?: { search?: { title?: unknown; snippet?: unknown }[] } };

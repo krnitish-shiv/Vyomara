@@ -6,6 +6,7 @@ import { cpSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } f
 import { tmpdir } from 'node:os';
 import { join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
+import { ensureElectron } from './ensure-electron.mjs';
 
 if (process.platform !== 'darwin') {
   throw new Error('Building the Vyomara app requires macOS.');
@@ -28,6 +29,7 @@ export function run(command, args, { quiet = false } = {}) {
 
 /** Compile main, preload, and renderer into out/. */
 export function buildSources() {
+  ensureElectron();
   run(process.execPath, [resolve(root, 'node_modules/electron-vite/bin/electron-vite.js'), 'build']);
 }
 

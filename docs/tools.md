@@ -25,6 +25,31 @@ Symlinks are never followed. `VYOM_ALLOWED_ROOTS` (JSON array) narrows access;
 | `update_plan` | `plan` | The agent's checklist for multi-step tasks, one step per line: `- [x]` done, `- [>]` in progress, `- [ ]` to do. It has no side effects. The desktop shows it as a live checklist and the CLI prints it. |
 | `read_file` | `path`, `offset?`, `limit?` | UTF-8 text, up to ~800 lines per call (max 2,000), within the output budget. Returns `startLine`, `endLine`, `totalLines`, `truncated`; continue with `offset = endLine + 1`. Files above `VYOM_MAX_FILE_BYTES` (2 MiB) are refused. |
 
+## Everyday helpers
+
+Local tools with no side effects and no approval, always available:
+
+| Tool | Arguments | Notes |
+|---|---|---|
+| `current_time` | `timezone?` | Date, time, weekday, and UTC offset on this Mac; with `timezone` (a city such as `London` or an IANA zone such as `America/New_York`) also the time there. |
+| `calculate` | `expression` | Exact arithmetic without `eval`: `+ - * / ^`, `mod`, parentheses, `%` and "15% of 2400", `!`, `sqrt`, `log`, `ln`, trig in degrees, `min`, `max`, `pi`, `e`. |
+| `convert_units` | `value`, `from`, `to` | Length, mass (including quintal), volume, area (sq ft, acre, hectare), speed, data size, time, and temperature. |
+| `date_math` | `date?`, `other_date?` or `add?` | Days between two dates, or a date plus `+45 days`, `-2 weeks`, `3 months`. |
+| `system_info` | — | macOS version, model, chip, memory, free disk, battery and charging state, uptime. |
+
+With web access, these ask once per host like other web requests (**Always allow** remembers the host):
+
+| Tool | Arguments | Source |
+|---|---|---|
+| `weather` | `place`, `days?` | Open-Meteo: current conditions and up to 7 days (temperature, feels-like, humidity, rain chance, wind, sunrise, sunset). |
+| `currency_convert` | `amount`, `from`, `to` | European Central Bank reference rates via frankfurter.dev (major currencies; not AED or crypto). |
+| `software_version` | `name`, `ecosystem?` | The latest release from the official registry: npm (default), PyPI, Homebrew, or GitHub releases (`owner/repo`). |
+
+The agent is told to use these instead of its memory. When a question asks for
+current information ("latest", "today", prices, versions, weather) and the
+model answers without any tool, or asks "should I fetch it?" instead of
+reading, the app sends it back to look it up (at most twice per request).
+
 ## File changes (reviewed)
 
 Each call waits for the user. The desktop shows a diff (the CLI prints one) and

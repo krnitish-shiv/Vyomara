@@ -16,7 +16,7 @@
     "check": "pnpm typecheck && pnpm test",
     "typecheck": "tsc --noEmit",
     "test": "node --disable-warning=ExperimentalWarning --experimental-strip-types --test",
-    "test:desktop-ui": "electron-vite build && node scripts/desktop-ui-smoke.mjs",
+    "test:desktop-ui": "node scripts/ensure-electron.mjs && electron-vite build && node scripts/desktop-ui-smoke.mjs",
     "eval": "node --disable-warning=ExperimentalWarning --experimental-strip-types scripts/eval-agent.ts"
   },
   "engines": {
