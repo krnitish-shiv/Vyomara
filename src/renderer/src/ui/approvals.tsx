@@ -144,7 +144,7 @@ export function ActionApprovalCard({
             ? `Use ${proposal.tool} on ${proposal.server}?`
             : 'Open this web page?';
   const remember = proposal.kind === 'command'
-    ? { label: 'Always allow here', title: 'Run now, and run this exact command in this folder without asking again until Vyomara quits' }
+    ? { label: 'Always allow here', title: 'Run now, and run this exact command in this folder (and its subfolders) without asking again. Revoke anytime in Permissions.' }
     : proposal.kind === 'web'
       ? { label: `Always allow ${proposal.host}`, title: `Read pages from ${proposal.host} without asking again. Revoke anytime in Permissions.` }
       : proposal.kind === 'application'

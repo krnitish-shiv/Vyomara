@@ -603,9 +603,9 @@ test('activity labels shorten long paths', async () => {
   );
 });
 
-test('"always allow" remembers only the exact command in the exact folder', async t => {
+test('"always allow" remembers only the exact command, in that folder and below', async t => {
   const h = await harness(t);
-  const other = join(h.root, 'src');
+  const other = join(h.root, '..');
   const asked: string[] = [];
   const answers: ApprovalDecision[] = ['always', true, true];
   const ran: string[] = [];
@@ -631,7 +631,8 @@ test('"always allow" remembers only the exact command in the exact folder', asyn
   await run('pnpm test', other);
   assert.deepEqual(asked, [`pnpm test@${h.root}`, `pnpm test --watch=false@${h.root}`, `pnpm test@${other}`]);
   assert.equal(ran.length, 5);
-  assert.equal(memory.size, 1);
+  assert.equal(memory.size, 2, 'the session entry and the saved grant');
+  assert.ok(memory.has('pnpm test', join(h.root, 'src')), 'subfolders are covered');
 });
 
 test('the desktop approval manager reports "always" only when chosen', async () => {

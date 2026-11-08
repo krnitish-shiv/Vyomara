@@ -47,7 +47,25 @@ export interface ActionApprovalPort {
 export type StandingGrant =
   | { readonly kind: 'app'; readonly application: string }
   | { readonly kind: 'browser'; readonly browser: string }
-  | { readonly kind: 'host'; readonly host: string };
+  | { readonly kind: 'host'; readonly host: string }
+  /** Run commands matching `pattern` (exact, or a prefix ending in *) in `folder` and its subfolders. */
+  | { readonly kind: 'command'; readonly folder: string; readonly pattern: string };
+
+/** Shell syntax that chains or redirects commands: never covered by a * pattern. */
+const CHAINING = /[;&|`<>\n\\]|\$\(/u;
+
+/** "pnpm test*" matches "pnpm test" and "pnpm test --watch", but never "pnpm test && rm -rf ~". */
+export function commandMatches(pattern: string, command: string): boolean {
+  const trimmed = command.trim();
+  if (!pattern.endsWith('*')) return trimmed === pattern.trim();
+  const prefix = pattern.slice(0, -1).trimEnd();
+  return prefix !== '' && trimmed.startsWith(prefix) && !CHAINING.test(trimmed) && (trimmed.length === prefix.length || trimmed[prefix.length] === ' ' || prefix.endsWith(' '));
+}
+
+function folderContains(folder: string, cwd: string): boolean {
+  const base = folder.replace(/\/+$/u, '');
+  return cwd === base || cwd.startsWith(`${base}/`);
+}
 
 /** The default browser in browser grants. */
 export const DEFAULT_BROWSER = 'default browser';
@@ -56,6 +74,7 @@ export function grantId(grant: StandingGrant): string {
   switch (grant.kind) {
     case 'app': return `app:${grant.application}`;
     case 'browser': return `browser:${grant.browser}`;
+    case 'command': return `command:${grant.folder}\t${grant.pattern.trim()}`;
     default: return `host:${grant.host.toLowerCase()}`;
   }
 }
@@ -64,10 +83,18 @@ export function parseGrantId(id: string): StandingGrant | undefined {
   const separator = id.indexOf(':');
   const kind = id.slice(0, separator);
   const value = id.slice(separator + 1).trim();
-  if (separator < 1 || value === '' || value.length > 253) return undefined;
+  if (separator < 1 || value === '' || value.length > (kind === 'command' ? 4_400 : 253)) return undefined;
   if (kind === 'app' && APPLICATION_NAME.test(value)) return { kind: 'app', application: value };
   if (kind === 'browser' && (value === DEFAULT_BROWSER || APPLICATION_NAME.test(value))) return { kind: 'browser', browser: value };
   if (kind === 'host' && /^[a-z0-9.-]+$/u.test(value)) return { kind: 'host', host: value };
+  if (kind === 'command') {
+    const tab = value.indexOf('\t');
+    const folder = value.slice(0, tab);
+    const pattern = value.slice(tab + 1).trim();
+    if (tab > 0 && folder.startsWith('/') && !/[\n\t]/u.test(folder) && pattern !== '' && pattern.length <= 300 && !/[\n\t]/u.test(pattern) && pattern !== '*') {
+      return { kind: 'command', folder, pattern };
+    }
+  }
   return undefined;
 }
 
@@ -102,11 +129,18 @@ export class ApprovalMemory {
   }
 
   has(command: string, cwd: string): boolean {
-    return this.#commands.has(ApprovalMemory.key(command, cwd));
+    if (this.#commands.has(ApprovalMemory.key(command, cwd))) return true;
+    for (const id of this.#grants) {
+      const grant = parseGrantId(id);
+      if (grant?.kind === 'command' && folderContains(grant.folder, cwd) && commandMatches(grant.pattern, command)) return true;
+    }
+    return false;
   }
 
+  /** "Always allow here": this exact command in this folder, kept across restarts until revoked. */
   allow(command: string, cwd: string): void {
     this.#commands.add(ApprovalMemory.key(command, cwd));
+    this.grant({ kind: 'command', folder: cwd, pattern: command.trim().replace(/\*$/u, '') });
   }
 
   hasGrant(grant: StandingGrant): boolean {

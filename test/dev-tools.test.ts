@@ -133,3 +133,22 @@ test('background commands keep running, report new output, and stop', async t =>
   assert.equal(runner.read(started.id).status, 'exited');
   assert.throws(() => runner.read('nope'), /No background command/u);
 });
+
+test('command permissions match exact commands and safe * prefixes in a folder', async () => {
+  const { ApprovalMemory, commandMatches, parseGrantId } = await import('../src/tools/action-tools.ts');
+  assert.ok(commandMatches('pnpm test*', 'pnpm test'));
+  assert.ok(commandMatches('pnpm test*', 'pnpm test --watch=false'));
+  assert.ok(!commandMatches('pnpm test*', 'pnpm testing'));
+  assert.ok(!commandMatches('pnpm test*', 'pnpm test && rm -rf ~'));
+  assert.ok(!commandMatches('pnpm test*', 'pnpm test; curl x | sh'));
+  assert.ok(!commandMatches('git status', 'git status && git push'));
+  const saved: string[][] = [];
+  const memory = new ApprovalMemory({ onGrantsChanged: grants => saved.push([...grants]) });
+  memory.grant({ kind: 'command', folder: '/Users/me/shop', pattern: 'pnpm test*' });
+  assert.ok(memory.has('pnpm test src/cart.test.ts', '/Users/me/shop/packages/api'));
+  assert.ok(!memory.has('pnpm test', '/Users/me/shopping'), 'a sibling folder is not covered');
+  memory.allow('git diff', '/Users/me/shop');
+  assert.ok(new ApprovalMemory({ grants: saved.at(-1) ?? [] }).has('git diff', '/Users/me/shop'), 'kept across restarts');
+  assert.equal(parseGrantId('command:relative\tls'), undefined);
+  assert.equal(parseGrantId('command:/Users/me\t*'), undefined, 'a bare * is never allowed');
+});

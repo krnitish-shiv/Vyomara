@@ -48,6 +48,7 @@ import {
 } from '../desktop/file-operation-approval.ts';
 import { ActionApprovalError, ActionApprovalManager } from '../desktop/action-approval.ts';
 import { MacApplicationLauncher } from '../desktop/mac-application-launcher.ts';
+import { homedir } from 'node:os';
 import { McpManager, readMcpConfig } from '../tools/mcp-client.ts';
 import { ShellCommandRunner } from '../tools/command-runner.ts';
 import { HttpWebClient } from '../tools/web-client.ts';
@@ -213,7 +214,9 @@ function describeGrant(id: string): { readonly id: string; readonly kind: string
     ? `Open ${grant.application}`
     : grant.kind === 'browser'
       ? `Open web pages in ${grant.browser === DEFAULT_BROWSER ? 'your default browser' : grant.browser}`
-      : `Read pages from ${grant.host}`;
+      : grant.kind === 'command'
+        ? `Run \`${grant.pattern}\` in ${grant.folder.replace(homedir(), '~')}`
+        : `Read pages from ${grant.host}`;
   return { id, kind: grant.kind, label };
 }
 
