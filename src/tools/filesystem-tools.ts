@@ -1149,6 +1149,37 @@ interface EditFileInput extends PathInput {
   readonly replace_all?: boolean;
 }
 
+interface MultiEditInput extends PathInput {
+  readonly edits: string;
+}
+
+interface ParsedEdit {
+  readonly old_text: string;
+  readonly new_text: string;
+  readonly replace_all?: boolean;
+}
+
+function parseEdits(text: string): { readonly edits?: readonly ParsedEdit[]; readonly error?: string } {
+  let value: unknown;
+  try {
+    value = JSON.parse(text);
+  } catch {
+    return { error: 'edits must be a JSON array like [{"old_text": "a", "new_text": "b"}].' };
+  }
+  if (!Array.isArray(value) || value.length === 0 || value.length > 20) return { error: 'edits must be a JSON array of 1-20 edits.' };
+  for (const [index, edit] of value.entries()) {
+    const item = edit as Record<string, unknown> | null;
+    if (typeof item !== 'object' || item === null || typeof item.old_text !== 'string' || typeof item.new_text !== 'string') {
+      return { error: `Edit ${index + 1} needs old_text and new_text strings.` };
+    }
+    if (item.old_text === '') return { error: `Edit ${index + 1}: old_text must not be empty.` };
+    if (item.old_text === item.new_text) return { error: `Edit ${index + 1}: old_text and new_text are identical.` };
+    if (item.replace_all !== undefined && typeof item.replace_all !== 'boolean') return { error: `Edit ${index + 1}: replace_all must be true or false.` };
+    if (BINARY_CONTROL_CHARACTERS.test(item.new_text)) return { error: `Edit ${index + 1}: new_text must be text without binary control characters.` };
+  }
+  return { edits: value as ParsedEdit[] };
+}
+
 function isListOutput(value: unknown): value is ListOutput {
   return isRecord(value) &&
     Array.isArray(value.entries) &&
@@ -1447,6 +1478,43 @@ export function registerFilesystemTools(
       return { ...result, operation: 'edit-file', path: input.path };
     },
   }));
+
+  // Several edits to one file in one review: fewer steps, and the user sees one diff.
+  const multiEdit = defineTool<MultiEditInput, OperationOutput>({
+    id: 'multi_edit',
+    effect: 'propose',
+    description: 'Make several edits to ONE existing file at once, reviewed as a single diff. `edits` is a JSON array of {"old_text": "...", "new_text": "...", "replace_all": false}; they are applied in order, each to the result of the previous one, and each old_text must match exactly once (copy it exactly from read_file). Prefer this over several edit_file calls on the same file.',
+    parameters: {
+      type: 'object',
+      properties: {
+        path: { ...PATH_PROPERTY, description: 'Absolute path of the existing file.' },
+        edits: { type: 'string', description: 'JSON array of {"old_text","new_text","replace_all"?} objects, 1-20 edits.', maxLength: contentMaximum },
+      },
+      required: ['path', 'edits'],
+      additionalProperties: false,
+    },
+    extraCheck: input => parseEdits(input.edits).error,
+    validateOutput: isOperationOutput,
+    async run(input, signal) {
+      const { edits } = parseEdits(input.edits);
+      const result = await approval.request({
+        operation: 'edit-file',
+        path: input.path,
+        replacements: (edits ?? []).map(edit => ({ find: edit.old_text, replace: edit.new_text, ...(edit.replace_all === true ? { all: true as const } : {}) })),
+      }, signal);
+      return { ...result, operation: 'edit-file', path: input.path };
+    },
+  });
+  // Models often send the edits as a real JSON array; accept that too.
+  const normalizeMultiEdit = multiEdit.normalizeInput;
+  registry.register({
+    ...multiEdit,
+    normalizeInput: value => {
+      const record = typeof value === 'object' && value !== null && !Array.isArray(value) ? value as Record<string, unknown> : undefined;
+      const withText = record && Array.isArray(record.edits) ? { ...record, edits: JSON.stringify(record.edits) } : value;
+      return normalizeMultiEdit ? normalizeMultiEdit(withText) : withText;
+    },
+  });
 
   registry.register(defineTool<PathInput, OperationOutput>({
     id: 'create_directory',

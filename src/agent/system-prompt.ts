@@ -272,7 +272,7 @@ ${environment.memories.map(entry => `- ${entry.text}${entry.project ? ` (project
   if (canEdit) {
     sections.push(`# Changing code
 - Read a file before editing it. Make focused, minimal changes that match the existing style; do not reformat unrelated code or remove comments.
-- edit_file replaces old_text with new_text. Copy old_text exactly from read_file output (same indentation and whitespace), with enough surrounding lines to be unique. For several separate changes, call edit_file several times.
+- edit_file replaces old_text with new_text. Copy old_text exactly from read_file output (same indentation and whitespace), with enough surrounding lines to be unique. For several changes to one file, use multi_edit (one reviewed diff); use edit_file for a single change.
 - Use write_file only to create new files or fully rewrite small ones.
 - Apply changes yourself with edit_file/write_file. Never paste modified code in your reply for the user to copy.
 - Do only what was asked. Do not add unrequested features, tests, refactors, or files.
@@ -283,7 +283,7 @@ ${environment.memories.map(entry => `- ${entry.text}${entry.project ? ` (project
   if (canRun) {
     sections.push(`# Running commands
 - run_command runs a zsh command after the user approves it. Use it for tests, builds, linters, git, package managers, and quick checks. Set cwd to the project root.
-- Commands must be non-interactive (no prompts, no editors, no watch mode, no servers that never exit). Prefer read-only commands for inspection.
+- Commands must be non-interactive (no prompts, no editors). Servers and watchers that never exit (pnpm dev, npm start, --watch) go in the background: run_command with background=true, then command_output to read their output (for example the local URL or an error) or stop them. Prefer read-only commands for inspection.${has('git_info') ? '\n- Git: use git_info (status, diff, log, show, branches; no approval) instead of running git commands. Commit with git_commit only when the user asks for a commit, after checking the diff; never push.' : ''}${has('check_problems') ? '\n- To find type errors and lint problems, or to verify a change, use check_problems on the project root; it returns file:line problems to fix.' : ''}
 - Never run destructive commands (rm -rf, git reset --hard, force pushes, deleting data) unless the user explicitly asked for exactly that.`);
   }
 

@@ -96,6 +96,8 @@ export function describeToolCall(toolId: string, args: Readonly<Record<string, u
       return `Searching “${clip(String(args.pattern ?? ''), 40)}” in ${shortPath(args.path)}`;
     case 'edit_file':
       return `Editing ${shortPath(args.path)}`;
+    case 'multi_edit':
+      return `Editing ${shortPath(args.path)} (several changes)`;
     case 'write_file':
       return `Writing ${shortPath(args.path)}`;
     case 'create_directory':
@@ -103,7 +105,7 @@ export function describeToolCall(toolId: string, args: Readonly<Record<string, u
     case 'delete_path':
       return `Moving ${shortPath(args.path)} to Trash`;
     case 'run_command':
-      return `Running \`${clip(String(args.command ?? ''), 60)}\``;
+      return `${args.background === true ? 'Starting in the background' : 'Running'} \`${clip(String(args.command ?? ''), 60)}\``;
     case 'open_application':
       return `Opening ${String(args.application ?? 'app')}${args.path ? ` with ${shortPath(args.path)}` : ''}`;
     case 'open_url':
@@ -119,6 +121,14 @@ export function describeToolCall(toolId: string, args: Readonly<Record<string, u
       return `Reading ${clip(String(args.url ?? ''), 60)}`;
     case 'web_search':
       return `Searching the web for “${clip(String(args.query ?? ''), 50)}”`;
+    case 'git_info':
+      return `Git ${String(args.action ?? 'status')}${args.target ? ` ${clip(String(args.target), 40)}` : ''} in ${shortPath(args.path)}`;
+    case 'command_output':
+      return args.action === 'stop' ? `Stopping background command ${String(args.id ?? '')}` : args.action === 'list' ? 'Listing background commands' : `Reading output of ${String(args.id ?? '')}`;
+    case 'check_problems':
+      return `Checking ${shortPath(args.path)} for problems`;
+    case 'git_commit':
+      return `Committing “${clip(String(args.message ?? '').split('\n')[0] ?? '', 50)}”`;
     case 'current_time':
       return args.timezone ? `Checking the time in ${clip(String(args.timezone), 30)}` : 'Checking the time';
     case 'calculate':
@@ -164,7 +174,7 @@ function verifiedAction(
 ): VerifiedAction | undefined {
   if (!isRecord(result)) return undefined;
   const path = `\`${shortPath(result.path ?? args.path)}\``;
-  if (toolId === 'edit_file' || toolId === 'write_file' || toolId === 'create_directory' || toolId === 'delete_path') {
+  if (toolId === 'edit_file' || toolId === 'multi_edit' || toolId === 'write_file' || toolId === 'create_directory' || toolId === 'delete_path') {
     const verb = result.operation === 'create-file'
       ? 'Created'
       : result.operation === 'create-directory'
@@ -183,8 +193,19 @@ function verifiedAction(
     const command = `\`${clip(String(result.command ?? args.command ?? ''), 70)}\``;
     if (result.status === 'rejected') return { ok: false, text: `You rejected running ${command}` };
     if (result.timedOut === true) return { ok: false, text: `Ran ${command} — timed out` };
+    if (result.background === true) return { ok: result.state === 'running', text: `Started ${command} in the background (${String(result.id)})${result.state === 'running' ? '' : ' — it exited'}` };
     const remembered = result.approval === 'remembered' ? ' (always-allowed)' : '';
     return { ok: result.exitCode === 0, text: `Ran ${command}${remembered} — exit code ${String(result.exitCode)}` };
+  }
+  if (toolId === 'check_problems') {
+    if (result.status === 'rejected') return { ok: false, text: `You rejected running \`${clip(String(result.command ?? ''), 60)}\`` };
+    return { ok: result.exitCode === 0, text: `Checked for problems with \`${clip(String(result.command ?? ''), 60)}\` — ${String(result.summary ?? '')}` };
+  }
+  if (toolId === 'git_commit') {
+    if (result.status === 'rejected') return { ok: false, text: 'You rejected the commit' };
+    return result.status === 'committed'
+      ? { ok: true, text: `Committed ${clip(String(result.commit ?? ''), 90)}` }
+      : { ok: false, text: `Commit failed — exit code ${String(result.exitCode)}` };
   }
   if (toolId === 'open_application') {
     const name = `${String(result.application)}${result.path ? ` (${shortPath(result.path)})` : ''}`;
@@ -233,7 +254,7 @@ function verifiedAction(
 const INVALID_CALL_CODES = new Set(['invalid-input', 'input-too-large', 'unknown-tool', 'policy-denied']);
 
 const MUTATING_TOOLS = new Set([
-  'edit_file', 'write_file', 'create_directory', 'delete_path', 'run_command', 'open_application', 'open_url',
+  'edit_file', 'multi_edit', 'git_commit', 'check_problems', 'write_file', 'create_directory', 'delete_path', 'run_command', 'open_application', 'open_url',
   'fetch_url', 'web_search', 'control_application', 'news_headlines',
   // Scrolling or reading again is a real step, not a repeated mistake.
   'browser',
@@ -246,7 +267,7 @@ const APPLY_CHANGE_NUDGE =
   'You described a code change but did not apply it. Do not ask the user to paste code: make the change yourself with edit_file (the user reviews it before it is written), then verify it. If you have not reproduced the problem yet, do that first.';
 
 /** Tools that change files; withheld when the user asked for no changes. */
-const FILE_CHANGE_TOOLS = new Set(['edit_file', 'write_file', 'create_directory', 'delete_path']);
+const FILE_CHANGE_TOOLS = new Set(['edit_file', 'multi_edit', 'write_file', 'create_directory', 'delete_path', 'git_commit']);
 
 /**
  * "don't change anything", "just tell me", "kuch mat badlo", "sirf batao":
@@ -681,7 +702,7 @@ async function runAgentTask(
         continue;
       }
 
-      if (call.toolId === 'edit_file' || call.toolId === 'write_file') attemptedEdit = true;
+      if (call.toolId === 'edit_file' || call.toolId === 'multi_edit' || call.toolId === 'write_file') attemptedEdit = true;
       if (WEB_TOOLS.has(call.toolId)) usedWebTool = true;
       options.onToolActivity?.({ id: toolCallId, toolId: call.toolId, label, status: 'running' });
       logger.emit({ event: 'tool.invoked', ...context, toolId: call.toolId });

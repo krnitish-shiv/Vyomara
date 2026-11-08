@@ -153,6 +153,30 @@ export interface CommandRunnerPort {
   run(command: string, cwd: string, timeoutMs: number, signal: AbortSignal): Promise<CommandResult>;
 }
 
+/** A command left running in the background (dev server, watcher). */
+export interface BackgroundCommand {
+  readonly id: string;
+  readonly command: string;
+  readonly cwd: string;
+  readonly status: 'running' | 'exited' | 'stopped';
+  readonly exitCode?: number | null;
+  readonly runningForSeconds: number;
+  /** New output since the last read. */
+  readonly output?: string;
+}
+
+export interface BackgroundCommandPort {
+  start(command: string, cwd: string): BackgroundCommand;
+  read(id: string, all?: boolean): BackgroundCommand;
+  stop(id: string): BackgroundCommand;
+  list(): BackgroundCommand[];
+}
+
+function isBackgroundPort(runner: unknown): runner is BackgroundCommandPort {
+  return typeof runner === 'object' && runner !== null && typeof (runner as BackgroundCommandPort).start === 'function'
+    && typeof (runner as BackgroundCommandPort).read === 'function';
+}
+
 /** Window-level control of a running app. */
 export type AppControlAction = 'focus' | 'hide' | 'minimize' | 'restore' | 'maximize' | 'fullscreen' | 'quit' | 'scroll-down' | 'scroll-up' | 'read-page';
 /** Actions control_application accepts ("read-page" is only asked for by the browser tool). */
@@ -338,6 +362,7 @@ interface CommandInput {
   readonly command: string;
   readonly cwd: string;
   readonly timeout_seconds?: number;
+  readonly background?: boolean;
 }
 
 interface CommandOutput {
@@ -380,8 +405,9 @@ interface UrlOutput {
 
 function commandError(value: unknown, maxTimeoutSeconds: number): string | undefined {
   if (!isRecord(value)) return 'Arguments must be a JSON object.';
-  const keys = onlyKeys(value, ['command', 'cwd', 'timeout_seconds']);
+  const keys = onlyKeys(value, ['command', 'cwd', 'timeout_seconds', 'background']);
   if (keys) return keys;
+  if (value.background !== undefined && typeof value.background !== 'boolean') return 'background must be true or false.';
   if (typeof value.command !== 'string' || value.command.trim() === '') return 'command must be a non-empty shell command.';
   if (value.command.length > 8_000 || value.command.includes('\0')) return 'command is too long or contains invalid characters.';
   if (typeof value.cwd !== 'string' || !isAbsolute(value.cwd)) return 'cwd must be the absolute directory to run the command in (usually the project root).';
@@ -449,13 +475,14 @@ export function registerActionTools(
     const runCommand: Tool<CommandInput, CommandOutput> = {
       id: 'run_command',
       effect: 'shell',
-      description: `Run a shell command (zsh) in a directory after the user approves it, e.g. tests, builds, git, package managers. Output (stdout+stderr) and exit code are returned. Commands must not wait for input. Default timeout ${Math.min(120, maxTimeoutSeconds)}s.`,
+      description: `Run a shell command (zsh) in a directory after the user approves it, e.g. tests, builds, git, package managers. Output (stdout+stderr) and exit code are returned. Commands must not wait for input. Default timeout ${Math.min(120, maxTimeoutSeconds)}s.${isBackgroundPort(commandRunner) ? ' For servers and watchers that keep running (pnpm dev, npm start, a watch mode), set background=true: it returns an id and the first output, keeps running after this request, and command_output reads or stops it.' : ''}`,
       parameters: {
         type: 'object',
         properties: {
           command: { type: 'string', description: 'The exact shell command, e.g. "pnpm test" or "git status".', maxLength: 8_000 },
           cwd: { type: 'string', description: 'Absolute working directory, usually the project root.', maxLength: 4_096 },
           timeout_seconds: { type: 'integer', description: 'Optional timeout in seconds.', minimum: 1, maximum: maxTimeoutSeconds },
+          ...(isBackgroundPort(commandRunner) ? { background: { type: 'boolean' as const, description: 'Optional: keep it running in the background (servers, watchers).' } } : {}),
         },
         required: ['command', 'cwd'],
         additionalProperties: false,
@@ -475,6 +502,28 @@ export function registerActionTools(
         );
         if (!decision) return { status: 'rejected', command: input.command, cwd };
         if (decision === 'always') approvalMemory?.allow(input.command, cwd);
+        if (input.background === true && isBackgroundPort(commandRunner)) {
+          const started = commandRunner.start(input.command, cwd);
+          // A moment for servers to print their address or first error.
+          for (let waited = 0; waited < 8_000 && !signal.aborted; waited += 500) {
+            await new Promise(resolve => setTimeout(resolve, 500));
+            if (commandRunner.read(started.id, true).status !== 'running') break;
+            if (waited >= 3_000 && /localhost:\d+|127\.0\.0\.1:\d+|ready|listening|compiled|error/iu.test(commandRunner.read(started.id, true).output ?? '')) break;
+          }
+          const now = commandRunner.read(started.id);
+          return {
+            status: 'completed',
+            command: input.command,
+            cwd,
+            approval: remembered ? 'remembered' : 'user',
+            background: true,
+            id: now.id,
+            state: now.status,
+            ...(now.exitCode === undefined ? {} : { exitCode: now.exitCode }),
+            output: now.output ?? '',
+            note: now.status === 'running' ? `Running in the background as ${now.id}. Read new output or stop it with command_output.` : 'It already exited; see output.',
+          };
+        }
         const result = await commandRunner.run(input.command, cwd, timeoutSeconds * 1_000, signal);
         return {
           status: 'completed',
@@ -490,6 +539,35 @@ export function registerActionTools(
       },
     };
     registry.register(runCommand);
+
+    if (isBackgroundPort(commandRunner)) {
+      const background = commandRunner;
+      const outputTool: Tool<{ id?: string; action?: string }, Record<string, unknown>> = {
+        id: 'command_output',
+        effect: 'read',
+        description: 'Manage commands started with run_command background=true: "read" (default) returns the new output since the last read and whether it is still running, "stop" stops it, "list" shows all of them.',
+        parameters: {
+          type: 'object',
+          properties: {
+            id: { type: 'string', description: 'The id returned by run_command (not needed for "list").', maxLength: 20 },
+            action: { type: 'string', description: '"read" (default), "stop", or "list".', maxLength: 5 },
+          },
+          additionalProperties: false,
+        },
+        normalizeInput: dropNulls,
+        validateInput: (value): value is { id?: string; action?: string } => isRecord(value)
+          && (value.action === undefined || value.action === 'read' || value.action === 'stop' || value.action === 'list')
+          && (value.action === 'list' || typeof value.id === 'string'),
+        inputError: value => (isRecord(value) && (value.action === 'list' || typeof value.id === 'string') ? 'action must be read, stop, or list.' : 'id is required (from run_command), unless action is "list".'),
+        validateOutput: (value): value is Record<string, unknown> => isRecord(value),
+        async run(input) {
+          if (input.action === 'list') return { commands: background.list() };
+          const id = input.id as string;
+          return input.action === 'stop' ? { ...background.stop(id) } : { ...background.read(id) };
+        },
+      };
+      registry.register(outputTool);
+    }
   }
 
   if (launcher) {

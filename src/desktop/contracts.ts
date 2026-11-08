@@ -26,12 +26,16 @@ export interface FileOperationRequest {
   readonly operation: FileOperationKind;
   readonly path: string;
   readonly content?: string;
-  readonly replacement?: {
-    readonly find: string;
-    readonly replace: string;
-    /** Replace every occurrence instead of requiring exactly one. */
-    readonly all?: true;
-  };
+  readonly replacement?: TextReplacement;
+  /** Several replacements applied in order to one file, reviewed as one diff (multi_edit). */
+  readonly replacements?: readonly TextReplacement[];
+}
+
+export interface TextReplacement {
+  readonly find: string;
+  readonly replace: string;
+  /** Replace every occurrence instead of requiring exactly one. */
+  readonly all?: true;
 }
 
 export interface DesktopFileOperationProposal {

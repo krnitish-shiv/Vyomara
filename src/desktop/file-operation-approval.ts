@@ -182,24 +182,29 @@ export class FileOperationApprovalManager implements FileOperationApprovalPort {
     }
     if (signal.aborted) throw new OperationStoppedError('cancelled');
     let reviewedRequest = request;
-    if (request.replacement) {
+    const replacements = request.replacements ?? (request.replacement ? [request.replacement] : undefined);
+    if (replacements) {
       if (request.operation !== 'edit-file' || prepared.currentContent === undefined) {
         throw new FileOperationApprovalError('Text replacement requires an existing regular file.');
       }
-      const { find, replace, all } = request.replacement;
-      const replaced = replaceText(prepared.currentContent, find, replace, all === true);
-      if (!replaced.ok && replaced.reason === 'ambiguous') {
-        throw new FileOperationApprovalError(
-          `old_text matches ${replaced.count ?? 'several'} places in the file. Include more surrounding lines so it matches exactly once, or set replace_all to true.`,
-        );
+      let content = prepared.currentContent;
+      for (const [index, { find, replace, all }] of replacements.entries()) {
+        // Edits apply in order, each to the result of the previous one.
+        const which = replacements.length > 1 ? `Edit ${index + 1}: ` : '';
+        const replaced = replaceText(content, find, replace, all === true);
+        if (!replaced.ok && replaced.reason === 'ambiguous') {
+          throw new FileOperationApprovalError(
+            `${which}old_text matches ${replaced.count ?? 'several'} places in the file. Include more surrounding lines so it matches exactly once, or set replace_all to true.`,
+          );
+        }
+        if (!replaced.ok) {
+          throw new FileOperationApprovalError(
+            `${which}old_text was not found in the file${index > 0 ? ' (after the earlier edits were applied)' : ''}. Copy it exactly from read_file output (without the line numbers).`
+              + (replaced.hint ? ` The closest lines in the file are:\n${replaced.hint}` : ' Read the file again first.'),
+          );
+        }
+        content = replaced.content;
       }
-      if (!replaced.ok) {
-        throw new FileOperationApprovalError(
-          'old_text was not found in the file. Copy it exactly from read_file output (without the line numbers).'
-            + (replaced.hint ? ` The closest lines in the file are:\n${replaced.hint}` : ' Read the file again first.'),
-        );
-      }
-      const content = replaced.content;
       if (Buffer.byteLength(content, 'utf8') > this.#options.config.maxFileBytes) {
         throw new FileOperationApprovalError('The proposed file exceeds the configured maximum size.');
       }

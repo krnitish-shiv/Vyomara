@@ -7,6 +7,8 @@ import type { ActionToolPorts } from './action-tools.ts';
 import { registerPlanTool } from './plan-tool.ts';
 import { registerMemoryTool } from './memory-tool.ts';
 import { registerUtilityTools } from './utility-tools.ts';
+import { registerGitTools } from './git-tools.ts';
+import { registerProblemsTool } from './problems-tool.ts';
 import type { MemoryStore } from '../storage/memory-store.ts';
 
 export interface ToolRegistryOptions {
@@ -29,6 +31,8 @@ export function createDefaultToolRegistry(
   const includeFilesystemTools = options.includeFilesystemTools ?? config.filesystemAllowedRoots.length > 0;
   if (includeFilesystemTools) {
     registerFilesystemTools(registry, config, {}, options.fileOperationApproval);
+    registerGitTools(registry, config, options.actions);
+    registerProblemsTool(registry, config, options.actions);
   }
   if (options.actions) {
     registerActionTools(registry, config, options.actions);

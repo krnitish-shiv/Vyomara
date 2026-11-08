@@ -54,7 +54,7 @@ test('time zones resolve from city names and IANA zones', () => {
   assert.equal(time.utcOffset, 'UTC+05:30');
 });
 
-test('the desktop tool set stays within the 32 tools a request may carry', () => {
+test('the desktop tool set leaves room for MCP tools within the model tool limit', () => {
   const config = loadConfig({ VYOM_PROVIDER: 'placeholder', VYOM_ALLOWED_ROOTS: '["/tmp"]', VYOM_DATA_DIR: '/tmp/vyomara-test-unused' });
   const ports = {
     approval: { request: async () => true },
@@ -67,7 +67,7 @@ test('the desktop tool set stays within the 32 tools a request may carry', () =>
   for (const id of ['current_time', 'calculate', 'convert_units', 'date_math', 'system_info', 'weather', 'currency_convert', 'software_version']) {
     assert.ok(ids.includes(id), id);
   }
-  assert.ok(ids.length <= 32, `${ids.length} tools`);
+  assert.ok(ids.length <= 40, `${ids.length} tools`);
 });
 
 function utilityRegistry(responses: Record<string, unknown>, decisions: boolean[] = []): { registry: ToolRegistry; fetched: string[]; asked: string[] } {

@@ -133,8 +133,11 @@ function ollamaMessage(message: SessionMessage): Record<string, unknown> {
   return { role: message.role, content: message.content };
 }
 
+/** Built-in tools plus room for MCP servers; each tool costs prompt tokens, so this stays bounded. */
+export const MAX_MODEL_TOOLS = 64;
+
 function ollamaTools(tools: readonly ModelToolDefinition[]): readonly Record<string, unknown>[] {
-  if (tools.length > 32) throw new ProviderError('malformed-response');
+  if (tools.length > MAX_MODEL_TOOLS) throw new ProviderError('malformed-response');
   const seen = new Set<string>();
   return tools.map(tool => {
     if (

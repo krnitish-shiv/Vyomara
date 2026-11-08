@@ -1267,6 +1267,7 @@ app.on('before-quit', () => {
   activeRequest?.abort();
   activeModelPull?.abort();
   activePrime?.abort();
+  shellCommandRunner.stopAll();
   macSpeechRunner.stop();
   whisperServer.stop();
   void localWhisperRunner?.stop();
