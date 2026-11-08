@@ -80,3 +80,35 @@ test('chat requests accept plan mode and up to four real pictures only', () => {
   assert.throws(() => parseDesktopChatRequest({ prompt: 'hi', requestId: id, images: [Buffer.from('#!/bin/sh echo hi').toString('base64')] }, 100));
   assert.throws(() => parseDesktopChatRequest({ prompt: 'hi', requestId: id, images: [PNG, PNG, PNG, PNG, PNG] }, 100));
 });
+
+test('the explore helper only looks, then reports back', async () => {
+  const { runExplorer } = await import('../src/agent/agent.ts');
+  const edits: string[] = [];
+  const registry = editRegistry(edits);
+  registry.register({
+    id: 'read_file',
+    effect: 'read',
+    description: 'Read a file.',
+    parameters: { type: 'object', properties: { path: { type: 'string' } }, required: ['path'], additionalProperties: false },
+    validateInput: (value): value is { path: string } => typeof (value as { path?: unknown }).path === 'string',
+    validateOutput: (value): value is Record<string, unknown> => typeof value === 'object',
+    async run() { return { content: 'export function total() {}' }; },
+  });
+  let step = 0;
+  const seen: SessionMessage[][] = [];
+  const provider: ModelProvider = {
+    id: 'scripted',
+    async complete(messages) {
+      seen.push([...messages]);
+      step += 1;
+      if (step === 1) return { kind: 'tool-calls', calls: [{ toolId: 'read_file', arguments: { path: '/shop/cart.ts' } }, { toolId: 'edit_file', arguments: { path: '/shop/cart.ts' } }] };
+      return { kind: 'final', text: 'total() is defined in `/shop/cart.ts:1`.' };
+    },
+  };
+  const tools = new ToolExecutor({ registry, policy: new PolicyGateway(), config, logger: createLogger(() => {}) });
+  const report = await runExplorer('In /shop, where is total() defined?', AbortSignal.timeout(5_000), { provider, tools, config, logger: createLogger(() => {}), environment });
+  assert.equal(report, 'total() is defined in `/shop/cart.ts:1`.');
+  assert.deepEqual(edits, [], 'the helper could not edit');
+  assert.match(JSON.stringify(seen[1]), /read-only helper: edit_file is not available/u);
+  assert.match(seen[0]?.[0]?.content ?? '', /^You are a read-only research helper/u);
+});

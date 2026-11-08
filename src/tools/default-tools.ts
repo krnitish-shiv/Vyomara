@@ -9,6 +9,7 @@ import { registerMemoryTool } from './memory-tool.ts';
 import { registerUtilityTools } from './utility-tools.ts';
 import { registerGitTools } from './git-tools.ts';
 import { registerProblemsTool } from './problems-tool.ts';
+import { registerExploreTool, type ExplorePort } from './explore-tool.ts';
 import type { MemoryStore } from '../storage/memory-store.ts';
 
 export interface ToolRegistryOptions {
@@ -19,6 +20,8 @@ export interface ToolRegistryOptions {
   readonly actions?: ActionToolPorts;
   /** Enables remember: lasting facts for future conversations. */
   readonly memory?: MemoryStore;
+  /** Enables explore: a read-only helper agent; `run` is filled in once the request's provider exists. */
+  readonly explore?: ExplorePort;
 }
 
 export function createDefaultToolRegistry(
@@ -33,6 +36,7 @@ export function createDefaultToolRegistry(
     registerFilesystemTools(registry, config, {}, options.fileOperationApproval);
     registerGitTools(registry, config, options.actions);
     registerProblemsTool(registry, config, options.actions);
+    if (options.explore) registerExploreTool(registry, options.explore);
   }
   if (options.actions) {
     registerActionTools(registry, config, options.actions);

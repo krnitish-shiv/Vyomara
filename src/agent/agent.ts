@@ -58,6 +58,11 @@ export interface AgentOptions {
   readonly planOnly?: boolean;
   /** Pictures attached to this request (base64), sent with it to a vision model. */
   readonly images?: readonly string[];
+  /**
+   * Only these tools may run (a helper such as explore). The model still sees
+   * the full tool list, so the cached prompt matches; others are refused.
+   */
+  readonly allowedTools?: ReadonlySet<string>;
   /** Which assistant (name, gender) answers. */
   readonly persona?: PersonaId;
   /** Lasting facts from earlier conversations, shown in the system prompt. */
@@ -128,6 +133,8 @@ export function describeToolCall(toolId: string, args: Readonly<Record<string, u
       return `Searching the web for “${clip(String(args.query ?? ''), 50)}”`;
     case 'git_info':
       return `Git ${String(args.action ?? 'status')}${args.target ? ` ${clip(String(args.target), 40)}` : ''} in ${shortPath(args.path)}`;
+    case 'explore':
+      return `Asking a helper: ${clip(String(args.task ?? ''), 60)}`;
     case 'command_output':
       return args.action === 'stop' ? `Stopping background command ${String(args.id ?? '')}` : args.action === 'list' ? 'Listing background commands' : `Reading output of ${String(args.id ?? '')}`;
     case 'check_problems':
@@ -459,6 +466,38 @@ export async function runAgent(
   }
 }
 
+/** Tools the explore helper may use: looking only. */
+export const EXPLORE_TOOLS: ReadonlySet<string> = new Set([
+  'list_directory', 'directory_tree', 'find_files', 'search_text', 'read_file', 'git_info', 'current_time',
+]);
+
+const EXPLORE_BRIEF = 'You are a read-only research helper for another assistant. Answer the task below by searching and reading files yourself (find_files, search_text, read_file, directory_tree, git_info). Do not change anything. Finish with a compact report: the answer, then the key places as `path:line` with one line each on what is there. No greetings.';
+
+/**
+ * Run a read-only helper on a self-contained question, in its own context,
+ * and return its report. Used by the explore tool so broad searches do not
+ * fill the main conversation.
+ */
+export async function runExplorer(
+  task: string,
+  signal: AbortSignal,
+  options: Pick<AgentOptions, 'provider' | 'tools' | 'config' | 'logger' | 'persona' | 'environment' | 'onToolActivity'>,
+): Promise<string> {
+  const config = { ...options.config, maxAgentIterations: Math.min(options.config.maxAgentIterations, 16), maxToolCalls: Math.min(options.config.maxToolCalls, 30) };
+  const report = await runAgent(`${EXPLORE_BRIEF}\n\nTask: ${task}`, signal, {
+    provider: options.provider,
+    tools: options.tools,
+    config,
+    session: new Session(),
+    logger: options.logger,
+    allowedTools: EXPLORE_TOOLS,
+    ...(options.persona ? { persona: options.persona } : {}),
+    ...(options.environment ? { environment: options.environment } : {}),
+    ...(options.onToolActivity ? { onToolActivity: activity => options.onToolActivity?.({ ...activity, label: `Explorer: ${activity.label}` }) } : {}),
+  });
+  return stripAppFooters(report).slice(0, 8_000);
+}
+
 /** Summaries of early turns, per session and cut point, so later requests in the app reuse them. */
 const summaryCache = new Map<string, string>();
 
@@ -761,6 +800,15 @@ async function runAgentTask(
             ok: false,
             error: 'You already made this exact call. Use the earlier result above, or try a different approach.',
           }),
+        });
+        continue;
+      }
+
+      if (options.allowedTools && !options.allowedTools.has(call.toolId)) {
+        session.add({
+          role: 'tool',
+          toolId: call.toolId,
+          content: JSON.stringify({ ok: false, error: `You are a read-only helper: ${call.toolId} is not available to you. Use only ${[...options.allowedTools].join(', ')}, then report what you found.` }),
         });
         continue;
       }
