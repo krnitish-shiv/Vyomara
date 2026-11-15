@@ -74,19 +74,18 @@ Results are `{status: "applied" | "rejected", operation, path}`.
 ## Actions (approved)
 
 These tools exist only when the host provides an approval port (`fetch_url`
-also needs a web client; `web_search` also needs a SearXNG backend). The desktop
-and CLI both do. They are also gated by the policy effects `shell`, `launch`,
+and `web_search` also need a web client). The desktop and CLI both do. They are also gated by the policy effects `shell`, `launch`,
 and `network`.
 
 | Tool | Arguments | Notes |
 |---|---|---|
 | `run_command` | `command`, `cwd`, `timeout_seconds?` | Runs `zsh -l -c` in `cwd`, with `CI=1`, no color, no pager, no stdin, and an augmented `PATH`. The whole process group is stopped on timeout or Stop. Output keeps the first ~6 KB and last ~14 KB. Returns `exitCode`, `timedOut`, and `output`. |
 | `open_application` | `application`, `path?`, `line?` | Any installed app, by name or alias (`vscode`, `chrome`, …). Optionally opens a file or folder in it. With `line`, VS Code jumps to that line (`code -g`). |
-| `control_application` | `application`, `action` | Window-level control of a running app. `focus` brings it to the front, `hide` hides it, `minimize` sends all its windows to the Dock, `restore` brings minimized windows back, `maximize` fills the main screen (without the menu bar and Dock) with its front window, `fullscreen` toggles macOS full screen, and `quit` closes it. Window actions wait a few seconds for an app that is still starting. The app is found by its bundle on disk, so an unknown name never opens a macOS dialog. See the permissions list below the table. |
+| `control_application` | `application`, `action` | Window-level control of a running app. `focus` brings it to the front, `hide` hides it, `minimize` sends all its windows to the Dock, `restore` brings minimized windows back, `maximize` fills the main screen (without the menu bar and Dock) with its front window, `fullscreen` toggles macOS full screen, and `quit` closes it. Window actions wait a few seconds for an app that is still starting. The app is found by its bundle on disk (the application folders, `/System/Library/CoreServices` for Finder, then Spotlight by display name), so an unknown name never opens a macOS dialog. See the permissions list below the table. |
 | `open_url` | `url`, `browser?` | Only `http`/`https`, without credentials. The approval card says the website receives the URL. Vyom cannot read the page. |
 
 | `fetch_url` | `url`, `offset?` | Vyomara downloads a public page and returns its `title` and text `content`, paged with `nextOffset`. The first page of results also includes up to 25 `links`. See the limits below the table. |
-| `web_search` | `query` | Only when `VYOM_SEARXNG_URL` points to a SearXNG instance with JSON output enabled. Returns up to 10 `{title, url, snippet}`. |
+| `web_search` | `query` | DuckDuckGo's HTML results by default (no key); a SearXNG instance when `VYOM_SEARXNG_URL` is set. Returns up to 10 `{title, url, snippet}`. Falls back to Wikipedia + Google News (own approval) when the engine is unavailable. |
 
 `control_application` needs these macOS permissions for Vyomara:
 - **Automation:** for `hide` and `quit`. macOS asks the first time.
@@ -131,7 +130,9 @@ listed in Verified actions, marked "(always-allowed)". See
 | `git_commit` | Exact command | `git add -A` (or the listed files) and `git commit -m …`, shown before it runs. Never pushes. |
 | `git_branch` | Changes: exact command | `list` (no approval), `create` (optionally `from`), `switch`, `delete` (merged only, `-d`), `stash`, `stash_pop`. |
 | `git_sync` | Pull/push: exact command | `fetch` (no approval), `pull --ff-only`, `push` (sets upstream the first time). Never forced. |
-| `github` | Writes: exact command, every time | Uses your `gh` login. Read: `pr_list`, `pr_view`, `pr_checks`, `pr_diff`, `issue_list`, `issue_view`, `run_list`, `run_log` (failed steps). Write: `pr_create`, `pr_comment`, `issue_create`, `issue_comment`. |
+| `github` | Writes: exact command, every time | Uses your `gh` login. Read: `repo_view`, `pr_list`, `pr_view`, `pr_checks`, `pr_diff`, `issue_list`, `issue_view`, `run_list`, `run_log` (failed steps), `release_list`. Write: `repo_create`, `repo_clone`, `pr_create`, `pr_comment`, `pr_review`, `pr_merge`, `pr_close`, `pr_checkout`, `issue_create`, `issue_comment`, `issue_close`, `run_rerun`, `release_create`. |
+| `vscode` | Open/diff/add folder: the "Open Visual Studio Code" card (one "Always allow" covers it); `install_extension`: exact command | `open` (path, line), `diff` (two files side by side), `add_folder`, `install_extension`, `list_extensions` (no approval). Runs the `code` command from the app bundle. |
+| `mac_control` | Every action, every time (no "always") | `volume`, `mute`, `unmute`, `dark_mode`, `lock_screen`, `sleep`, `screenshot` (to the Desktop), `clipboard_get` (its text goes to the local model), `clipboard_set`, `notify`, `type_text` and `press_key` (into the front app; need Accessibility), `open_settings` (a System Settings pane), `wifi` on/off, `running_apps` (no approval). Uses `osascript`, `pbcopy`/`pbpaste`, `networksetup`, `screencapture`; arguments are passed, never spliced into scripts. |
 | `check_problems` | Exact command | Runs the project's own typecheck/lint script, or `tsc`, `cargo check`, `go vet`, `ruff`, `swift build`, and returns problems as `file:line:column` with a message. |
 | `run_command` with `background: true` | Exact command | Starts a server or watcher that keeps running after the request; returns an id and its first output. |
 | `command_output` | None | `read` new output of a background command, `stop` it, or `list` them. All stop when Vyomara quits. |
@@ -227,9 +228,9 @@ user's browser.
 | Tool | What it does | Approval |
 |---|---|---|
 | `news_headlines` | Headlines from Google News RSS: title, publisher, time, link. Takes an optional topic and `hi` for Hindi. | `news.google.com` |
-| `web_search` | Uses SearXNG when configured. Without it, searches Wikipedia's search API (facts) and Google News RSS (current events). | the search host |
+| `web_search` | DuckDuckGo (`html.duckduckgo.com`) by default, or SearXNG when configured. If the engine fails or asks for a bot check, Wikipedia's search API (facts) and Google News RSS (current events) are used instead, after their own approval, and the result says so. | the search host |
 | `fetch_url` | Reads a public page in the background. | per host |
-| `browser` | Drives the user's own Chrome, visibly: `search` Google and read the results, `open`, `read` the front tab (including signed-in pages), `click` a numbered link, `scroll`, `back`. | One "Always allow" for Google Chrome covers browsing. |
+| `browser` | Drives the user's own Chrome, visibly: `search` Google and read the results, `open`, `read` the front tab (including signed-in pages), `click` a numbered link, `type` into a numbered input (optionally submit), `find` text on the page, `scroll`, `back`, `tabs`, `switch`, `close`. | One "Always allow" for Google Chrome covers browsing. |
 
 The `browser` tool needs Chrome's **View → Developer → Allow JavaScript from
 Apple Events**, and macOS permission for Vyomara to control Chrome. It stops at

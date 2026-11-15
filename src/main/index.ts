@@ -1,5 +1,6 @@
 import { existsSync } from 'node:fs';
 import { ChromeBrowser } from '../desktop/chrome-browser.ts';
+import { MacSystemControl } from '../desktop/mac-system-control.ts';
 import { MemoryStore } from '../storage/memory-store.ts';
 import { canShowDiff, VSCodeDiffPreview } from '../desktop/vscode-diff.ts';
 import { ChangeJournal } from '../desktop/change-journal.ts';
@@ -81,6 +82,7 @@ const macSpeechRunner = new MacSpeechRunner();
 /** Approved file changes per request, so "undo karo" can put them back. */
 /** Drives the user's Chrome for the browser tool, when Chrome is installed. */
 const chromeBrowser = existsSync('/Applications/Google Chrome.app') ? new ChromeBrowser() : undefined;
+const macSystemControl = process.platform === 'darwin' ? new MacSystemControl() : undefined;
 const changeJournal = new ChangeJournal({ moveToTrash: path => shell.trashItem(path) });
 /** Told to the model on the next request in a session after an undo. */
 const undoNotes = new Map<string, string>();
@@ -580,6 +582,7 @@ function desktopToolOptions(
       ...(macApplicationLauncher ? { launcher: macApplicationLauncher } : {}),
       web: new HttpWebClient(desktopConfig.searxngUrl === undefined ? {} : { searxngUrl: desktopConfig.searxngUrl }),
       ...(chromeBrowser ? { browser: chromeBrowser } : {}),
+      ...(macSystemControl ? { system: macSystemControl } : {}),
       mcp: mcpManager,
       mcpAllowed,
     },
@@ -590,7 +593,7 @@ let activePrime: AbortController | undefined;
 
 /**
  * Load the chosen model in the background, then let it read a new chat's
- * system prompt and tools (~4,000 tokens, ~25 s on a 14B model), so the
+ * system prompt and tools (~8,000 tokens, ~45 s on a 14B model), so the
  * first message does not wait for either. Runs again when the model,
  * context size, or assistant changes, since those change the prompt.
  */

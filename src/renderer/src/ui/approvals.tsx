@@ -142,7 +142,9 @@ export function ActionApprovalCard({
           ? `${proposal.action.replace(/^./u, letter => letter.toUpperCase())} ${proposal.application}?`
           : proposal.kind === 'mcp'
             ? `Use ${proposal.tool} on ${proposal.server}?`
-            : 'Open this web page?';
+            : proposal.kind === 'system'
+              ? 'Do this on your Mac?'
+              : 'Open this web page?';
   const remember = proposal.kind === 'command'
     ? { label: 'Always allow here', title: 'Run now, and run this exact command in this folder (and its subfolders) without asking again. Revoke anytime in Permissions.' }
     : proposal.kind === 'web'
@@ -155,6 +157,8 @@ export function ActionApprovalCard({
             : { label: `Always allow ${proposal.application}`, title: `Open, focus, hide, and minimize ${proposal.application} without asking again (quitting still asks).` }
           : proposal.kind === 'mcp'
             ? { label: `Always allow ${proposal.tool}`, title: `Use ${proposal.tool} on ${proposal.server} without asking again until Vyomara quits.` }
+            : proposal.kind === 'system'
+              ? undefined
           : { label: `Always allow ${proposal.application ?? 'browser'}`, title: `Open web pages in ${proposal.application ?? 'your default browser'} without asking again. Revoke anytime in Permissions.` };
   return (
     <section className="file-operation-review action-review" aria-label={title} ref={cardRef}>
@@ -198,6 +202,18 @@ export function ActionApprovalCard({
           </p>
         </>
       )}
+      {proposal.kind === 'system' && (
+        <>
+          <code className="file-operation-path">{proposal.detail}</code>
+          <p className="file-operation-warning">
+            {proposal.action === 'clipboard_get'
+              ? 'The clipboard text is sent to your local model.'
+              : proposal.action === 'type_text' || proposal.action === 'press_key'
+                ? 'Goes to whichever app is in front right now, as if you typed it.'
+                : 'Only this one action; it asks every time.'}
+          </p>
+        </>
+      )}
       {proposal.kind === 'web' && (
         <>
           <code className="file-operation-path">{proposal.target}</code>
@@ -208,7 +224,7 @@ export function ActionApprovalCard({
       )}
       <div className="file-operation-actions">
         <button className="file-operation-approve" type="button" onClick={() => onDecide(true)} disabled={busy}>
-          {proposal.kind === 'command' ? 'Run' : proposal.kind === 'web' || proposal.kind === 'app-control' || proposal.kind === 'mcp' ? 'Allow' : 'Open'}
+          {proposal.kind === 'command' ? 'Run' : proposal.kind === 'web' || proposal.kind === 'app-control' || proposal.kind === 'mcp' || proposal.kind === 'system' ? 'Allow' : 'Open'}
         </button>
         {remember && (
           <button className="file-operation-reject" type="button" onClick={() => onDecide(true, true)} disabled={busy} title={remember.title}>

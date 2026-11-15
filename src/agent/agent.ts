@@ -12,7 +12,7 @@ import { ToolExecutionError, ToolExecutor } from '../tools/executor.ts';
 import { TOOL_ID_PATTERN } from '../tools/contracts.ts';
 import type { ModelToolDefinition } from '../tools/contracts.ts';
 import { CHARS_PER_TOKEN, fitMessagesToBudget, summaryCut, transcriptForSummary } from './context.ts';
-import { buildSystemPrompt, detectEnvironment, spokenRequestNote } from './system-prompt.ts';
+import { buildSystemPrompt, buildTurnContext, carriesProjectInstructions, detectEnvironment, spokenRequestNote } from './system-prompt.ts';
 import { expandSlashCommand, hooksFor } from './project-extras.ts';
 import type { PersonaId } from '../shared/persona.ts';
 import type { MemoryStore } from '../storage/memory-store.ts';
@@ -297,7 +297,7 @@ const CONTINUE_NUDGE =
 const APPLY_CHANGE_NUDGE =
   'You described a code change but did not apply it. Do not ask the user to paste code: make the change yourself with edit_file (the user reviews it before it is written), then verify it. If you have not reproduced the problem yet, do that first.';
 
-/** Tools that change files; withheld when the user asked for no changes. */
+/** Tools that change files; refused when the user asked for no changes (they stay listed so the cached prompt matches). */
 const FILE_CHANGE_TOOLS = new Set(['edit_file', 'multi_edit', 'notebook_edit', 'git_branch', 'git_sync', 'write_file', 'create_directory', 'delete_path', 'git_commit']);
 
 /**
@@ -376,20 +376,22 @@ export function claimsNoWebAccess(text: string): boolean {
     /Allow JavaScript from Apple Events|JavaScript (?:ko )?enable|enable JavaScript/iu.test(text);
 }
 
-/** Tools that open or drive the user's browser; offered only when the user asks for that. */
+/** Tools that open or drive the user's browser; refused unless the user asks for that (they stay listed so the cached prompt matches). */
 const BROWSER_TOOLS = new Set(['browser', 'open_url']);
 
 /**
- * Whether the user asked to use, open, show, or act in the browser ("Chrome
- * mein dekho", "YouTube kholo", "jo khula hai padho", "scroll karo"). A plain
- * question ("trending song kya hai?") is answered in the background instead,
- * without touching the user's browser.
+ * Whether the user asked to use, open, show, search, or act in the browser
+ * ("Chrome mein dekho", "YouTube kholo", "google karo", "jo khula hai padho",
+ * "scroll karo"). A plain question ("trending song kya hai?") is answered in
+ * the background instead, without touching the user's browser.
  */
 export function asksForBrowser(prompt: string): boolean {
   const text = prompt.toLowerCase();
   return /\b(?:chrome|browser|safari|tab|tabs|website|site)\b/u.test(text) ||
-    /\b(?:open|show me|show|visit|go to|navigate|play|scroll|click)\b/u.test(text) ||
-    /\b(?:kholo|khol do|kholiye|kholna|dikhao|dikha do|dikhaiye|chalao|chala do|bajao|baja do|scroll|click|khula|khuli|khule)\b/u.test(text) ||
+    /\b(?:open|show me|show|visit|go to|navigate|play|scroll|click|browse)\b/u.test(text) ||
+    // "google karo", "search for X", "google pe dekho": a search the user wants done in the browser.
+    /\b(?:google|search)\s+(?:karo|kar do|kardo|kar|kijiye|for|it|this|up|pe|par|mein|me)\b/u.test(text) ||
+    /\b(?:kholo|khol do|kholiye|kholna|dikhao|dikha do|dikhaiye|chalao|chala do|bajao|baja do|scroll|click|khula|khuli|khule|dhoondo|dhundo|dhundho|dhoondho|khojo)\b/u.test(text) ||
     /(?:खोलो|खोल दो|दिखाओ|चलाओ|बजाओ|खुला|खुली)/u.test(text);
 }
 
@@ -606,21 +608,33 @@ async function summarizeEarlierTurns(
   };
 }
 
-/** The system prompt and tools a request gets. primeAgent must build exactly the same for a new chat. */
+/** How many recent turns the project's instructions stay in view before they are sent again. */
+const INSTRUCTIONS_RECENT_TURNS = 8;
+
+/**
+ * The system prompt and tools a request gets, plus this turn's context. The
+ * system prompt and tool list depend only on the model, the persona, and the
+ * registered tools, never on the request: primeAgent builds exactly the same
+ * for a new chat, and Ollama's cached copy stays valid for the whole
+ * conversation. Everything that changes per turn goes into `context`.
+ */
 async function prepareTurn(
   prompt: string,
   signal: AbortSignal,
   options: Pick<AgentOptions, 'provider' | 'tools' | 'config' | 'session' | 'persona' | 'memory' | 'environment'>,
-): Promise<{ readonly toolCapable: boolean; readonly modelTools: readonly ModelToolDefinition[]; readonly system: string }> {
+): Promise<{
+  readonly toolCapable: boolean;
+  readonly modelTools: readonly ModelToolDefinition[];
+  readonly system: string;
+  readonly context: string;
+}> {
   // Models without tool support still chat; they are told what they cannot do.
   const toolCapable = await checkToolSupport(options.provider, options.config, signal);
-  const readOnlyRequest = forbidsChanges(prompt);
-  const browserAllowed = asksForBrowser(prompt);
-  const modelTools = (toolCapable ? options.tools.modelTools() : [])
-    .filter(tool => !readOnlyRequest || !FILE_CHANGE_TOOLS.has(tool.id))
-    // The user's browser is touched only when they ask for it.
-    .filter(tool => browserAllowed || !BROWSER_TOOLS.has(tool.id));
-  const detected = options.environment ?? detectEnvironment(options.session.messages());
+  // Every request sends the same tools; the loop refuses the ones this request may not use.
+  const modelTools = toolCapable ? options.tools.modelTools() : [];
+  const history = options.session.messages();
+  const detected = options.environment ??
+    detectEnvironment(prompt === '' ? history : [...history, { role: 'user', content: prompt }]);
   const memories = options.memory?.relevant(detected.activeProject) ?? [];
   const environment = memories.length > 0
     ? { ...detected, memories: memories.map(entry => ({ text: entry.text, ...(entry.project ? { project: entry.project } : {}) })) }
@@ -629,13 +643,21 @@ async function prepareTurn(
     chatOnly: !toolCapable,
     ...(options.persona ? { persona: options.persona } : {}),
   });
-  return { toolCapable, modelTools, system };
+  // Project instructions are long: send them once per project, and again once they left the recent turns.
+  const project = detected.activeProject;
+  const includeInstructions = project !== undefined && !history
+    .filter(message => message.role === 'user')
+    .slice(-INSTRUCTIONS_RECENT_TURNS)
+    .some(message => message.role === 'user' && carriesProjectInstructions(message.context, project));
+  const context = buildTurnContext(environment, { includeInstructions, readOnly: forbidsChanges(prompt) });
+  return { toolCapable, modelTools, system, context };
 }
 
 /**
  * Have the model read the system prompt and tool list of a new chat ahead of
- * time. That part is ~4,000 tokens and takes ~25 s on a 14B model; Ollama
- * keeps what it read, so the user's first message then starts at once.
+ * time. That part is ~8,000 tokens and takes ~45 s on a 14B model; Ollama
+ * keeps what it read, so the user's first message then starts at once, and
+ * every later turn too, because that part never changes (see prepareTurn).
  */
 export async function primeAgent(
   signal: AbortSignal,
@@ -661,11 +683,11 @@ async function runAgentTask(
   const typed = prompt;
   const project = (options.environment ?? detectEnvironment([...session.messages(), { role: 'user', content: typed }])).activeProject;
   prompt = (await expandSlashCommand(typed, project)).prompt;
-  session.add({ role: 'user', content: prompt });
   const start = Date.now();
   task.transition('planning');
 
-  const { toolCapable, modelTools, system } = await prepareTurn(prompt, signal, options);
+  const { toolCapable, modelTools, system, context } = await prepareTurn(prompt, signal, options);
+  session.add({ role: 'user', content: prompt, context });
   const readOnlyRequest = forbidsChanges(prompt);
   const browserAllowed = asksForBrowser(prompt);
   const fixedChars = system.length + JSON.stringify(modelTools).length;
@@ -739,8 +761,8 @@ async function runAgentTask(
     }
     const withNote = promptIndex < 0
       ? fitted
-      : fitted.map((message, index) => index === promptIndex
-        ? { role: 'user' as const, content: [message.content, ...notes].join('\n\n'), ...(images.length > 0 ? { images } : {}) }
+      : fitted.map((message, index) => index === promptIndex && message.role === 'user'
+        ? { ...message, content: [message.content, ...notes].join('\n\n'), ...(images.length > 0 ? { images } : {}) }
         : message);
     const messages = pendingNudge
       ? [...withNote, { role: 'user' as const, content: pendingNudge }]

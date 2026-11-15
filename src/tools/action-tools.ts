@@ -4,6 +4,7 @@ import type { AppConfig } from '../config/config.ts';
 import { ToolFailure, type Tool, type ToolRegistry } from './contracts.ts';
 import { resolveSafeFilesystemPath } from './filesystem-tools.ts';
 import type { McpPort } from './mcp-client.ts';
+import type { SystemControlPort } from './system-tool.ts';
 
 /** An action that changes something outside Vyomara and therefore needs the user's approval. */
 export type ActionProposal =
@@ -29,6 +30,12 @@ export type ActionProposal =
     readonly server: string;
     readonly tool: string;
     readonly arguments: string;
+  }
+  | {
+    /** The Mac itself (volume, dark mode, lock, clipboard, keystrokes, …); `detail` says exactly what happens. */
+    readonly kind: 'system';
+    readonly action: string;
+    readonly detail: string;
   };
 
 /**
@@ -240,8 +247,10 @@ export interface ActionToolPorts {
   readonly launcher?: LauncherPort;
   /** Enables fetch_url (and web_search when a search backend is configured). */
   readonly web?: WebClientPort;
-  /** Enables browser: driving the user's own Chrome (search, open, read, click, scroll). */
+  /** Enables browser: driving the user's own Chrome (search, open, read, click, type, tabs). */
   readonly browser?: BrowserPort;
+  /** Enables mac_control: volume, dark mode, lock, clipboard, keystrokes, settings panes, Wi-Fi. */
+  readonly system?: SystemControlPort;
   /** Tools from the user's MCP servers (mcp.json); each call is approved. */
   readonly mcp?: McpPort;
   /** MCP tools the user chose "Always allow" for, until the app quits. */
@@ -254,7 +263,14 @@ export type BrowserAction =
   | { readonly kind: 'read' }
   | { readonly kind: 'click'; readonly link: number }
   | { readonly kind: 'scroll'; readonly direction: 'down' | 'up' }
-  | { readonly kind: 'back' };
+  | { readonly kind: 'back' }
+  /** Type into the numbered input from the last read (search boxes, forms); submit presses Enter / submits the form. */
+  | { readonly kind: 'type'; readonly field: number; readonly text: string; readonly submit: boolean }
+  /** Find text on the page: scrolls to it and returns the surrounding snippets. */
+  | { readonly kind: 'find'; readonly text: string }
+  | { readonly kind: 'tabs' }
+  | { readonly kind: 'switch'; readonly tab: number }
+  | { readonly kind: 'close' };
 
 /** What the live tab shows after an action. */
 export interface BrowserPage {
@@ -262,6 +278,12 @@ export interface BrowserPage {
   readonly title: string;
   readonly text: string;
   readonly links: readonly { readonly n: number; readonly text: string; readonly url: string }[];
+  /** Visible inputs, numbered for `type`. */
+  readonly inputs?: readonly { readonly n: number; readonly type: string; readonly label: string }[];
+  /** The front window's tabs, after `tabs`, `switch`, or `close`. */
+  readonly tabs?: readonly { readonly n: number; readonly title: string; readonly url: string; readonly active: boolean }[];
+  /** After `find`. */
+  readonly found?: { readonly matched: boolean; readonly snippets: readonly string[] };
   /** Google result list, when the page is a Google search. */
   readonly results?: readonly { readonly title: string; readonly url: string; readonly snippet: string }[];
   readonly captcha?: boolean;
@@ -281,14 +303,27 @@ interface BrowserInput {
   readonly link?: number;
   readonly direction?: 'down' | 'up';
   readonly offset?: number;
+  readonly field?: number;
+  readonly text?: string;
+  readonly submit?: boolean;
+  readonly tab?: number;
 }
+
+const BROWSER_ACTIONS = ['search', 'open', 'read', 'click', 'scroll', 'back', 'type', 'find', 'tabs', 'switch', 'close'];
+const BROWSER_KEYS = ['action', 'query', 'url', 'link', 'direction', 'offset', 'field', 'text', 'submit', 'tab'];
 
 function browserInputError(value: unknown): string | undefined {
   if (!isRecord(value)) return 'Arguments must be a JSON object.';
-  const actions = ['search', 'open', 'read', 'click', 'scroll', 'back'];
-  if (typeof value.action !== 'string' || !actions.includes(value.action)) return `action must be one of: ${actions.join(', ')}.`;
-  if (Object.keys(value).some(key => !['action', 'query', 'url', 'link', 'direction', 'offset'].includes(key))) return 'Use only action, query, url, link, direction, offset.';
+  if (typeof value.action !== 'string' || !BROWSER_ACTIONS.includes(value.action)) return `action must be one of: ${BROWSER_ACTIONS.join(', ')}.`;
+  if (Object.keys(value).some(key => !BROWSER_KEYS.includes(key))) return `Use only ${BROWSER_KEYS.join(', ')}.`;
   if (value.action === 'search' && (typeof value.query !== 'string' || value.query.trim() === '' || value.query.length > 400)) return 'search needs query (the search words).';
+  if (value.action === 'type') {
+    if (!Number.isInteger(value.field) || (value.field as number) < 1 || (value.field as number) > 200) return 'type needs field: an input number from the last read.';
+    if (typeof value.text !== 'string' || value.text.length > 2_000) return 'type needs text (at most 2000 characters).';
+    if (value.submit !== undefined && typeof value.submit !== 'boolean') return 'submit must be true or false.';
+  }
+  if (value.action === 'find' && (typeof value.text !== 'string' || value.text.trim() === '' || value.text.length > 200)) return 'find needs text (the words to look for on the page).';
+  if (value.action === 'switch' && (!Number.isInteger(value.tab) || (value.tab as number) < 1 || (value.tab as number) > 200)) return 'switch needs tab: a tab number from tabs.';
   if (value.action === 'open') {
     if (typeof value.url !== 'string') return 'open needs url.';
     try {
@@ -707,7 +742,7 @@ export function registerActionTools(
     const openUrl: Tool<UrlInput, UrlOutput> = {
       id: 'open_url',
       effect: 'network',
-      description: 'Show a web page to the USER in their browser (after approval), e.g. "open YouTube", "Chrome mein … search karo". You cannot see the page afterwards. To read a page yourself and answer from it, use fetch_url instead. For a search the user wants to see, use https://www.google.com/search?q=<url-encoded query>. Optional browser, e.g. "Google Chrome" or "Safari".',
+      description: 'Show a web page to the USER in their browser (after approval) when they only want it opened, e.g. "open YouTube", "github.com kholo". You cannot see the page afterwards, so never use it when the user expects an answer: to search or read in Chrome and answer from it use browser; to read a page in the background use fetch_url. Optional browser, e.g. "Google Chrome" or "Safari".',
       parameters: {
         type: 'object',
         properties: {
@@ -747,14 +782,18 @@ export function registerActionTools(
     const browserTool: Tool<BrowserInput, Record<string, unknown>> = {
       id: 'browser',
       effect: 'network',
-      description: 'Use the user\'s Google Chrome like a person, visibly (after approval): "search" Google and read the results, "open" any site, "read" the page in the front tab (what the user is looking at, including pages they are signed in to), "click" a link by its number from the last read, "scroll" down/up, "back". Returns the page title, URL, text (long pages: read again with offset = nextOffset), and numbered links. Use it to browse for anything: research, prices, docs, comparisons, following links across pages. If a page asks for a CAPTCHA or sign-in, stop and tell the user; never try to get around it.',
+      description: 'Use the user\'s Google Chrome like a person, visibly (after approval): "search" Google and read the results, "open" any site, "read" the front tab (what the user is looking at, including pages they are signed in to), "click" a link by its number from the last read, "type" text into a numbered input from the last read (search boxes, forms; submit=true presses Enter), "find" text on the page, "scroll" down/up, "back", "tabs" (list the window\'s tabs), "switch" to a tab, "close" the tab. Returns the page title, URL, text (long pages: read again with offset = nextOffset), numbered links, and numbered inputs. Use it to browse for anything: research, prices, docs, comparisons, following links across pages, searching inside a site. If a page asks for a CAPTCHA or sign-in, stop and tell the user; never try to get around it.',
       parameters: {
         type: 'object',
         properties: {
-          action: { type: 'string', description: 'search, open, read, click, scroll, or back.', maxLength: 8 },
+          action: { type: 'string', description: 'search, open, read, click, type, find, scroll, back, tabs, switch, or close.', maxLength: 8 },
           query: { type: 'string', description: 'For search: the search words.', maxLength: 400 },
           url: { type: 'string', description: 'For open: full http(s) address.', maxLength: 4_096 },
           link: { type: 'integer', description: 'For click: link number from the last read.', minimum: 1, maximum: 200 },
+          field: { type: 'integer', description: 'For type: input number from the last read.', minimum: 1, maximum: 200 },
+          text: { type: 'string', description: 'For type: the text to enter; for find: the words to look for.', maxLength: 2_000 },
+          submit: { type: 'boolean', description: 'For type: press Enter / submit the form afterwards.' },
+          tab: { type: 'integer', description: 'For switch: tab number from tabs.', minimum: 1, maximum: 200 },
           direction: { type: 'string', description: 'For scroll: "down" (default) or "up".', maxLength: 4 },
           offset: { type: 'integer', description: 'For read: character offset from a previous truncated result.', minimum: 0 },
         },
@@ -766,15 +805,7 @@ export function registerActionTools(
       inputError: browserInputError,
       validateOutput: (value): value is Record<string, unknown> => isRecord(value) && typeof value.status === 'string',
       async run(input, signal) {
-        const action: BrowserAction = input.action === 'search'
-          ? { kind: 'search', query: (input.query ?? '').trim() }
-          : input.action === 'open'
-            ? { kind: 'open', url: new URL(input.url ?? '').href }
-            : input.action === 'click'
-              ? { kind: 'click', link: input.link ?? 1 }
-              : input.action === 'scroll'
-                ? { kind: 'scroll', direction: input.direction ?? 'down' }
-                : { kind: input.action === 'back' ? 'back' : 'read' };
+        const action = browserActionFor(input);
         // One "always allow" for Chrome covers browsing; otherwise each navigation asks.
         const remembered = approvalMemory?.hasGrant(browserGrant) === true;
         if (!remembered) {
@@ -802,6 +833,9 @@ export function registerActionTools(
           totalChars: page.text.length,
           ...(nextOffset < page.text.length ? { truncated: true, nextOffset } : {}),
           ...(offset === 0 ? { links: page.links.slice(0, 60) } : {}),
+          ...(offset === 0 && page.inputs && page.inputs.length > 0 ? { inputs: page.inputs.slice(0, 40) } : {}),
+          ...(page.tabs ? { tabs: page.tabs.slice(0, 60) } : {}),
+          ...(page.found ? { found: page.found } : {}),
           ...(page.height !== undefined && page.scroll !== undefined && page.viewport !== undefined
             ? { scrolledTo: `${Math.round(((page.scroll + page.viewport) / Math.max(page.height, 1)) * 100)}% of the page` }
             : {}),
@@ -809,6 +843,22 @@ export function registerActionTools(
       },
     };
     registry.register(browserTool);
+  }
+}
+
+function browserActionFor(input: BrowserInput): BrowserAction {
+  switch (input.action) {
+    case 'search': return { kind: 'search', query: (input.query ?? '').trim() };
+    case 'open': return { kind: 'open', url: new URL(input.url ?? '').href };
+    case 'click': return { kind: 'click', link: input.link ?? 1 };
+    case 'scroll': return { kind: 'scroll', direction: input.direction ?? 'down' };
+    case 'type': return { kind: 'type', field: input.field ?? 1, text: input.text ?? '', submit: input.submit === true };
+    case 'find': return { kind: 'find', text: (input.text ?? '').trim() };
+    case 'switch': return { kind: 'switch', tab: input.tab ?? 1 };
+    case 'tabs': return { kind: 'tabs' };
+    case 'close': return { kind: 'close' };
+    case 'back': return { kind: 'back' };
+    default: return { kind: 'read' };
   }
 }
 
@@ -962,7 +1012,7 @@ export function registerWebTools(
     effect: 'network',
     description: builtIn
       ? 'Search the web (after the user approves): returns titles, URLs, and snippets from Wikipedia (facts, people, places, topics) and Google News (current events). Then use fetch_url to read the most relevant pages before answering, and cite the URLs you used.'
-      : 'Search the web (after the user approves) and return result titles, URLs, and snippets. Then use fetch_url to read the most relevant pages before answering, and cite the URLs you used.',
+      : 'Search the web (after the user approves) and return result titles, URLs, and snippets, like a search engine. Use it for anything you do not know or that may have changed: docs, versions, prices, how-tos, people, places, news. Then use fetch_url to read the 1–3 most relevant pages before answering, and cite the URLs you used.',
     parameters: {
       type: 'object',
       properties: { query: { type: 'string', description: 'Search words.', maxLength: 400 } },
@@ -977,8 +1027,24 @@ export function registerWebTools(
       const query = input.query.trim();
       const host = searchHost ?? BUILT_IN_SEARCH_HOSTS;
       if (!await approve('search', query, host, signal)) return { status: 'rejected', query };
-      const results = builtIn && fetchRaw ? await builtInSearch(query, fetchRaw, signal) : await web.search(query, signal);
-      return { status: 'searched', query, results: results.slice(0, 10) };
+      if (builtIn && fetchRaw) {
+        return { status: 'searched', query, results: (await builtInSearch(query, fetchRaw, signal)).slice(0, 10) };
+      }
+      try {
+        return { status: 'searched', query, results: (await web.search(query, signal)).slice(0, 10) };
+      } catch (error) {
+        // The search engine may be unreachable or ask for a bot check; facts and news
+        // still come from Wikipedia and Google News, with their own approval.
+        if (!fetchRaw || !(error instanceof ToolFailure)) throw error;
+        if (!await approve('search', query, BUILT_IN_SEARCH_HOSTS, signal)) throw error;
+        const results = await builtInSearch(query, fetchRaw, signal);
+        return {
+          status: 'searched',
+          query,
+          results: results.slice(0, 10),
+          note: `${host} was unavailable (${error.message}) so these results come from ${BUILT_IN_SEARCH_HOSTS}.`,
+        };
+      }
     },
   };
   registry.register(webSearch);

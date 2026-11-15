@@ -35,6 +35,8 @@ proposed decisions must not be presented as current implementation choices.
 | [0023](./0023-proposed-changes-as-vs-code-diffs.md) | Show proposed file changes as VS Code diffs | Accepted |
 | [0024](./0024-coding-agent-project-context.md) | Project instructions, language, and batch edit approval | Accepted |
 | [0025](./0025-memories-across-conversations.md) | Memories across conversations | Accepted |
+| [0026](./0026-cached-prompt-and-built-in-web-search.md) | Cached system prompt, per-turn context, built-in web search | Accepted |
+| [0027](./0027-vscode-mac-control-and-wider-github-browser.md) | VS Code, Mac control, wider GitHub and browser tools | Accepted |
 
 ## Open decisions
 

@@ -12,8 +12,40 @@ const APPLICATION_FOLDERS = [
   '/Applications/Utilities',
   '/System/Applications',
   '/System/Applications/Utilities',
+  // Finder and other system apps live here.
+  '/System/Library/CoreServices',
   join(homedir(), 'Applications'),
 ];
+
+/** CFBundleIdentifier of the app bundle at `appPath`, or undefined. */
+async function bundleIdentifierAt(appPath: string): Promise<string | undefined> {
+  const plistPath = join(appPath, 'Contents', 'Info.plist');
+  try {
+    const text = (await readFile(plistPath)).toString('utf8');
+    const xml = /<key>CFBundleIdentifier<\/key>\s*<string>([^<]+)<\/string>/u.exec(text)?.[1];
+    if (xml) return xml.trim();
+    // Binary plist: ask plutil to convert it.
+    const converted = spawnSync('/usr/bin/plutil', ['-extract', 'CFBundleIdentifier', 'raw', '-o', '-', plistPath], { encoding: 'utf8', timeout: 3_000 });
+    if (converted.status === 0 && converted.stdout.trim() !== '') return converted.stdout.trim();
+  } catch {
+    return undefined;
+  }
+  return undefined;
+}
+
+/** App bundles Spotlight knows under this display name (apps in Setapp, Homebrew, or nested folders). */
+function spotlightApplications(application: string): string[] {
+  const name = application.replace(/["\\]/gu, '');
+  if (name === '') return [];
+  const result = spawnSync('/usr/bin/mdfind', [
+    `kMDItemContentType == "com.apple.application-bundle" && kMDItemDisplayName == "${name}"c`,
+  ], { encoding: 'utf8', timeout: 3_000 });
+  if (result.status !== 0) return [];
+  return result.stdout.split('\n')
+    .map(line => line.trim())
+    .filter(line => line.endsWith('.app') && !line.includes('/.Trash/'))
+    .slice(0, 5);
+}
 
 /** Bundle identifier of an installed app, found by name (case-insensitive), or undefined. */
 export async function findBundleIdentifier(application: string): Promise<string | undefined> {
@@ -27,17 +59,12 @@ export async function findBundleIdentifier(application: string): Promise<string 
     }
     const match = entries.find(entry => entry.toLowerCase() === wanted);
     if (!match) continue;
-    try {
-      const plist = await readFile(join(folder, match, 'Contents', 'Info.plist'));
-      const text = plist.toString('utf8');
-      const xml = /<key>CFBundleIdentifier<\/key>\s*<string>([^<]+)<\/string>/u.exec(text)?.[1];
-      if (xml) return xml.trim();
-      // Binary plist: ask plutil to convert it.
-      const converted = spawnSync('/usr/bin/plutil', ['-extract', 'CFBundleIdentifier', 'raw', '-o', '-', join(folder, match, 'Contents', 'Info.plist')], { encoding: 'utf8', timeout: 3_000 });
-      if (converted.status === 0 && converted.stdout.trim() !== '') return converted.stdout.trim();
-    } catch {
-      continue;
-    }
+    const id = await bundleIdentifierAt(join(folder, match));
+    if (id) return id;
+  }
+  for (const path of spotlightApplications(application)) {
+    const id = await bundleIdentifierAt(path);
+    if (id) return id;
   }
   return undefined;
 }

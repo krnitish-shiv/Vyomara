@@ -11,6 +11,8 @@ import { registerGitTools } from './git-tools.ts';
 import { registerProblemsTool } from './problems-tool.ts';
 import { registerExploreTool, type ExplorePort } from './explore-tool.ts';
 import { registerMcpTools } from './mcp-tools.ts';
+import { registerSystemTool } from './system-tool.ts';
+import { registerVscodeTool } from './vscode-tool.ts';
 import { MAX_MODEL_TOOLS } from '../providers/provider.ts';
 import type { MemoryStore } from '../storage/memory-store.ts';
 
@@ -43,6 +45,8 @@ export function createDefaultToolRegistry(
   if (options.actions) {
     registerActionTools(registry, config, options.actions);
     registerWebTools(registry, config, options.actions);
+    if (includeFilesystemTools) registerVscodeTool(registry, config, options.actions);
+    if (options.actions.system) registerSystemTool(registry, options.actions.system, options.actions.approval);
   }
   // Clock, calculator, units, dates, and Mac status always; weather, rates, and versions with web access.
   registerUtilityTools(registry, options.actions);

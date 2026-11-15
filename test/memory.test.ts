@@ -3,7 +3,7 @@ import test, { type TestContext } from 'node:test';
 import { mkdtemp, rm, stat } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { buildSystemPrompt } from '../src/agent/system-prompt.ts';
+import { buildSystemPrompt, buildTurnContext } from '../src/agent/system-prompt.ts';
 import { looksSecret, MemoryStore } from '../src/storage/memory-store.ts';
 import { ToolRegistry } from '../src/tools/contracts.ts';
 import { registerMemoryTool } from '../src/tools/memory-tool.ts';
@@ -65,6 +65,9 @@ test('the remember tool saves a fact and the prompt shows remembered facts', asy
     memories: [{ text: 'Main project is KeylessRN.' }, { text: 'Tests: pnpm check', project: '/Users/me/shop' }],
   };
   const prompt = buildSystemPrompt(environment, [{ id: 'remember', description: 'x', parameters: { type: 'object', properties: {}, additionalProperties: false } }]);
-  assert.match(prompt, /# What you remember about the user[\s\S]*- Main project is KeylessRN\.\n- Tests: pnpm check \(project: \/Users\/me\/shop\)/);
   assert.match(prompt, /# Remembering[\s\S]*yaad rakhna/);
+  // Remembered facts go with each turn's context, not into the cached system prompt (ADR-0026).
+  assert.doesNotMatch(prompt, /Main project is KeylessRN/);
+  const context = buildTurnContext(environment);
+  assert.match(context, /What you remember about the user[\s\S]*  - Main project is KeylessRN\.\n  - Tests: pnpm check \(project: \/Users\/me\/shop\)/);
 });

@@ -1,9 +1,21 @@
-import { htmlToText } from '../shared/html-text.ts';
+import { decodeEntities, htmlToText } from '../shared/html-text.ts';
 import { ToolFailure } from './contracts.ts';
 import { isPrivateHost } from './action-tools.ts';
 import type { WebClientPort, WebPage, WebSearchResult } from './action-tools.ts';
 
 const USER_AGENT = 'Vyomara/1.0 (local personal assistant; +https://github.com/krnitish-shiv/Vyomara)';
+/** The keyless search backend used when no SearXNG instance is configured (ADR-0026). */
+export const DUCKDUCKGO_SEARCH = 'https://html.duckduckgo.com/html/';
+/** DuckDuckGo answers its HTML form only for browsers; Vyomara searches there on the user's behalf, after approval. */
+const BROWSER_USER_AGENT = 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/130.0.0.0 Safari/537.36';
+
+interface RequestOptions {
+  readonly method: 'GET' | 'POST';
+  readonly accept: string;
+  /** Form body for POST (application/x-www-form-urlencoded). */
+  readonly body?: string;
+  readonly userAgent?: string;
+}
 const MAX_BYTES = 3_000_000;
 const MAX_REDIRECTS = 5;
 const TIMEOUT_MS = 20_000;
@@ -49,11 +61,16 @@ export class HttpWebClient implements WebClientPort {
   }
 
   get searchHost(): string | undefined {
-    return this.#searxng?.hostname;
+    return this.#searxng?.hostname ?? new URL(DUCKDUCKGO_SEARCH).hostname;
   }
 
-  async #get(url: URL, signal: AbortSignal, allowPrivate: boolean, accept: string): Promise<{ readonly response: Response; readonly url: URL }> {
+  #get(url: URL, signal: AbortSignal, allowPrivate: boolean, accept: string): Promise<{ readonly response: Response; readonly url: URL }> {
+    return this.#request(url, signal, allowPrivate, { method: 'GET', accept });
+  }
+
+  async #request(url: URL, signal: AbortSignal, allowPrivate: boolean, options: RequestOptions): Promise<{ readonly response: Response; readonly url: URL }> {
     let current = url;
+    let method = options.method;
     const timeout = AbortSignal.timeout(TIMEOUT_MS);
     const combined = AbortSignal.any([signal, timeout]);
     for (let hop = 0; hop <= MAX_REDIRECTS; hop += 1) {
@@ -66,11 +83,17 @@ export class HttpWebClient implements WebClientPort {
       let response: Response;
       try {
         response = await this.#fetch(current, {
-          method: 'GET',
+          method,
           redirect: 'manual',
           credentials: 'omit',
           signal: combined,
-          headers: { 'user-agent': USER_AGENT, accept, 'accept-language': 'en,hi;q=0.8' },
+          headers: {
+            'user-agent': options.userAgent ?? USER_AGENT,
+            accept: options.accept,
+            'accept-language': 'en,hi;q=0.8',
+            ...(method === 'POST' ? { 'content-type': 'application/x-www-form-urlencoded' } : {}),
+          },
+          ...(method === 'POST' ? { body: options.body ?? '' } : {}),
         });
       } catch {
         if (signal.aborted) throw new ToolFailure('The download was cancelled.', 'tool-failed');
@@ -82,6 +105,8 @@ export class HttpWebClient implements WebClientPort {
         await response.body?.cancel().catch(() => undefined);
         if (!location) throw new ToolFailure('The page redirected without a destination.', 'tool-failed');
         current = new URL(location, current);
+        // Browsers follow a redirected form submission with a plain GET.
+        method = 'GET';
         continue;
       }
       return { response, url: current };
@@ -118,8 +143,9 @@ export class HttpWebClient implements WebClientPort {
     return readLimited(response, signal);
   }
 
+  /** SearXNG when configured, otherwise DuckDuckGo's HTML results (no key, no account). */
   async search(query: string, signal: AbortSignal): Promise<readonly WebSearchResult[]> {
-    if (!this.#searxng) throw new ToolFailure('Web search is not configured.', 'unsupported-operation');
+    if (!this.#searxng) return this.#duckDuckGo(query, signal);
     const url = new URL('search', this.#searxng.href.endsWith('/') ? this.#searxng : `${this.#searxng.href}/`);
     url.searchParams.set('q', query);
     url.searchParams.set('format', 'json');
@@ -150,4 +176,60 @@ export class HttpWebClient implements WebClientPort {
       return [{ title: title.slice(0, 200), url: link, snippet: typeof content === 'string' ? content.slice(0, 400) : '' }];
     }).slice(0, 10);
   }
+
+  async #duckDuckGo(query: string, signal: AbortSignal): Promise<readonly WebSearchResult[]> {
+    const { response } = await this.#request(new URL(DUCKDUCKGO_SEARCH), signal, false, {
+      method: 'POST',
+      accept: 'text/html',
+      body: new URLSearchParams({ q: query }).toString(),
+      userAgent: BROWSER_USER_AGENT,
+    });
+    if (!response.ok) {
+      await response.body?.cancel().catch(() => undefined);
+      throw new ToolFailure(`DuckDuckGo answered HTTP ${response.status}.`, 'tool-failed');
+    }
+    const page = await readLimited(response, signal);
+    const results = parseDuckDuckGoResults(page);
+    if (results.length === 0 && /anomaly|bots|captcha/iu.test(page)) {
+      throw new ToolFailure('DuckDuckGo asked for a bot check; try again in a minute.', 'tool-failed');
+    }
+    return results;
+  }
+}
+
+/** The organic results of a DuckDuckGo HTML results page (ads and tracking links dropped). */
+export function parseDuckDuckGoResults(page: string): WebSearchResult[] {
+  const text = (html: string): string => decodeEntities(html.replace(/<[^>]+>/gu, '')).replace(/\s+/gu, ' ').trim();
+  const results: WebSearchResult[] = [];
+  for (const block of page.split('result__body').slice(1)) {
+    const anchor = /class="result__a"\s+href="([^"]+)"[^>]*>([\s\S]*?)<\/a>/u.exec(block);
+    if (!anchor) continue;
+    const snippet = /class="result__snippet"[^>]*>([\s\S]*?)<\/a>/u.exec(block)?.[1] ?? '';
+    const link = unwrapDuckDuckGoLink(decodeEntities(anchor[1] ?? ''));
+    if (!link) continue;
+    results.push({ title: text(anchor[2] ?? '').slice(0, 200), url: link, snippet: text(snippet).slice(0, 400) });
+    if (results.length >= 10) break;
+  }
+  return results;
+}
+
+/** DuckDuckGo sometimes wraps results as //duckduckgo.com/l/?uddg=<url>; ads go through its own hosts and are dropped. */
+function unwrapDuckDuckGoLink(href: string): string | undefined {
+  let url: URL;
+  try {
+    url = new URL(href.startsWith('//') ? `https:${href}` : href);
+  } catch {
+    return undefined;
+  }
+  if (/(?:^|\.)duckduckgo\.com$/u.test(url.hostname)) {
+    const wrapped = url.searchParams.get('uddg');
+    if (!wrapped || !/^https?:\/\//u.test(wrapped)) return undefined;
+    try {
+      url = new URL(wrapped);
+    } catch {
+      return undefined;
+    }
+  }
+  if (url.protocol !== 'https:' && url.protocol !== 'http:') return undefined;
+  return url.href;
 }

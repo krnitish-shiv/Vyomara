@@ -327,8 +327,20 @@ function gh(args: readonly string[], cwd: string, signal: AbortSignal): Promise<
   });
 }
 
-const GITHUB_READ = new Set(['pr_list', 'pr_view', 'pr_checks', 'pr_diff', 'issue_list', 'issue_view', 'run_list', 'run_log']);
-const GITHUB_WRITE = new Set(['repo_create', 'pr_create', 'pr_comment', 'issue_create', 'issue_comment']);
+const GITHUB_READ = new Set(['repo_view', 'pr_list', 'pr_view', 'pr_checks', 'pr_diff', 'issue_list', 'issue_view', 'run_list', 'run_log', 'release_list']);
+const GITHUB_WRITE = new Set(['repo_create', 'repo_clone', 'pr_create', 'pr_comment', 'pr_review', 'pr_merge', 'pr_close', 'pr_checkout', 'issue_create', 'issue_comment', 'issue_close', 'run_rerun', 'release_create']);
+const GITHUB_KEYS = ['path', 'action', 'number', 'title', 'body', 'base', 'draft', 'state', 'name', 'public', 'method', 'delete_branch', 'event', 'tag'];
+/** owner/repo, or a GitHub URL, for repo_clone. */
+const REPO_REFERENCE = /^(?:[\w.-]+\/[\w.-]+|https:\/\/github\.com\/[\w.-]+\/[\w.-]+(?:\.git)?)$/u;
+
+/** Clone a GitHub repository into the folder at path (shown and approved as the exact command). */
+async function cloneRepository(input: Record<string, unknown>, approval: Approval, runner: Runner, signal: AbortSignal): Promise<Record<string, unknown>> {
+  const folder = String(input.path).replace(/\/+$/u, '');
+  const reference = String(input.name);
+  const result = await approvedRun(`gh repo clone ${quote(reference)}`, folder, approval, runner, undefined, signal, 300);
+  const name = reference.replace(/\.git$/u, '').split('/').at(-1) ?? '';
+  return { ...result, ...(result.status === 'done' && name ? { path: `${folder}/${name}` } : {}) };
+}
 
 /** Create a GitHub repository from a local folder (initialising git there if needed) and push it. */
 async function createRepository(input: Record<string, unknown>, approval: Approval, runner: Runner, signal: AbortSignal): Promise<Record<string, unknown>> {
@@ -346,16 +358,23 @@ async function createRepository(input: Record<string, unknown>, approval: Approv
 function registerGitHubTool(registry: ToolRegistry, repositoryRoot: RepositoryRoot, folderOf: RepositoryRoot, approval: Approval, runner: Runner): void {
   const error = (value: unknown): string | undefined => {
     if (!isRecord(value)) return 'Arguments must be a JSON object.';
-    if (Object.keys(value).some(key => !['path', 'action', 'number', 'title', 'body', 'base', 'draft', 'state', 'name', 'public'].includes(key))) return 'Use only path, action, number, title, body, base, draft, state, name, public.';
+    if (Object.keys(value).some(key => !GITHUB_KEYS.includes(key))) return `Use only ${GITHUB_KEYS.join(', ')}.`;
     if (value.action === 'repo_create' && (typeof value.name !== 'string' || !/^[\w.-]{1,100}$/u.test(value.name))) return 'name must be the new repository name (letters, digits, . - _).';
+    if (value.action === 'repo_clone' && (typeof value.name !== 'string' || !REPO_REFERENCE.test(value.name))) return 'name must be owner/repo or a https://github.com/owner/repo URL.';
+    if (value.action === 'release_create' && (typeof value.tag !== 'string' || !/^[\w.+-]{1,100}$/u.test(value.tag))) return 'tag is required (for example v2.0.0).';
     if (value.public !== undefined && typeof value.public !== 'boolean') return 'public must be true or false.';
+    if (value.delete_branch !== undefined && typeof value.delete_branch !== 'boolean') return 'delete_branch must be true or false.';
+    if (value.method !== undefined && !['merge', 'squash', 'rebase'].includes(String(value.method))) return 'method must be merge, squash, or rebase.';
+    if (value.event !== undefined && !['approve', 'comment', 'request_changes'].includes(String(value.event))) return 'event must be approve, comment, or request_changes.';
     if (typeof value.path !== 'string' || !isAbsolute(value.path)) return 'path must be the absolute path of the repository.';
     const action = value.action;
     if (typeof action !== 'string' || (!GITHUB_READ.has(action) && !GITHUB_WRITE.has(action))) return `action must be one of: ${[...GITHUB_READ, ...GITHUB_WRITE].join(', ')}.`;
-    // PR views default to the current branch's PR; issues, comments, and run logs need a number.
-    if (['issue_view', 'pr_comment', 'issue_comment', 'run_log'].includes(action) && !Number.isInteger(value.number)) return 'number is required (the PR, issue, or run number).';
+    // PR views, reviews, merges, and closes default to the current branch's PR; issues, comments, and runs need a number.
+    if (['issue_view', 'issue_comment', 'issue_close', 'pr_comment', 'pr_checkout', 'run_log', 'run_rerun'].includes(action) && !Number.isInteger(value.number)) return 'number is required (the PR, issue, or run number).';
     if ((action === 'pr_create' || action === 'issue_create') && !stringField(value, 'title', 256)) return 'title is required.';
     if ((action.endsWith('_comment') || action === 'issue_create') && !stringField(value, 'body', 60_000)) return 'body is required.';
+    if (action === 'pr_review' && value.event === undefined) return 'pr_review needs event: approve, comment, or request_changes.';
+    if (action === 'pr_review' && value.event !== 'approve' && !stringField(value, 'body', 60_000)) return 'body is required for a comment or request_changes review.';
     if (value.base !== undefined && (typeof value.base !== 'string' || !BRANCH.test(value.base))) return 'base must be a branch name.';
     if (value.state !== undefined && !['open', 'closed', 'merged', 'all'].includes(String(value.state))) return 'state must be open, closed, merged, or all.';
     if (value.draft !== undefined && typeof value.draft !== 'boolean') return 'draft must be true or false.';
@@ -364,20 +383,24 @@ function registerGitHubTool(registry: ToolRegistry, repositoryRoot: RepositoryRo
   registry.register({
     id: 'github',
     effect: 'shell',
-    description: 'GitHub through the user\'s GitHub CLI login. repo_create (name, public? default private, body = description) creates a GitHub repository from the local folder at path and pushes it (the folder is made a git repository with a first commit if needed). For an existing repository, reading needs no approval: pr_list, pr_view (number, or the current branch\'s PR), pr_checks (CI status), pr_diff, issue_list, issue_view, run_list (recent workflow runs), run_log (failed steps of run `number`). Writing asks first: pr_create (title, body, base?, draft?; push the branch first), pr_comment, issue_create, issue_comment.',
+    description: 'GitHub through the user\'s GitHub CLI login. Reading needs no approval: repo_view, pr_list, pr_view (number, or the current branch\'s PR), pr_checks (CI status), pr_diff, issue_list, issue_view, run_list (recent workflow runs), run_log (failed steps of run `number`), release_list. Writing is shown and approved first: repo_create (name, public?, body = description; makes the folder at path a repository and pushes it), repo_clone (name = owner/repo or URL, path = folder to clone into), pr_create (title, body, base?, draft?; push the branch first), pr_comment, pr_review (event approve | comment | request_changes, body), pr_merge (method merge | squash | rebase, delete_branch?), pr_close, pr_checkout (switch to the PR\'s branch locally), issue_create, issue_comment, issue_close, run_rerun, release_create (tag, title, body; empty body = generated notes).',
     parameters: {
       type: 'object',
       properties: {
-        path: { type: 'string', description: 'Absolute path of the repository.', maxLength: 4_096 },
-        action: { type: 'string', description: 'pr_list, pr_view, pr_checks, pr_diff, issue_list, issue_view, run_list, run_log, pr_create, pr_comment, issue_create, issue_comment.', maxLength: 14 },
+        path: { type: 'string', description: 'Absolute path of the repository (repo_clone: the folder to clone into).', maxLength: 4_096 },
+        action: { type: 'string', description: 'One of the actions listed in the description, e.g. pr_create, pr_merge, issue_close.', maxLength: 14 },
         number: { type: 'integer', description: 'PR, issue, or workflow run number.', minimum: 1 },
-        title: { type: 'string', description: 'Title for pr_create / issue_create.', maxLength: 256 },
-        body: { type: 'string', description: 'Markdown body or comment.', maxLength: 60_000 },
+        title: { type: 'string', description: 'Title for pr_create / issue_create / release_create.', maxLength: 256 },
+        body: { type: 'string', description: 'Markdown body, comment, review text, or release notes.', maxLength: 60_000 },
         base: { type: 'string', description: 'pr_create: target branch (default: the repository default).', maxLength: 200 },
         draft: { type: 'boolean', description: 'pr_create: open as a draft.' },
         state: { type: 'string', description: 'pr_list / issue_list: open (default), closed, merged, or all.', maxLength: 6 },
-        name: { type: 'string', description: 'repo_create: the new repository name.', maxLength: 100 },
+        name: { type: 'string', description: 'repo_create: the new repository name; repo_clone: owner/repo or URL.', maxLength: 200 },
         public: { type: 'boolean', description: 'repo_create: true for a public repository (default private).' },
+        method: { type: 'string', description: 'pr_merge: merge (default), squash, or rebase.', maxLength: 6 },
+        delete_branch: { type: 'boolean', description: 'pr_merge / pr_close: delete the branch afterwards.' },
+        event: { type: 'string', description: 'pr_review: approve, comment, or request_changes.', maxLength: 15 },
+        tag: { type: 'string', description: 'release_create: the tag, e.g. v2.0.0.', maxLength: 100 },
       },
       required: ['path', 'action'],
       additionalProperties: false,
@@ -393,11 +416,14 @@ function registerGitHubTool(registry: ToolRegistry, repositoryRoot: RepositoryRo
     async run(input, signal) {
       const action = String(input.action);
       if (action === 'repo_create') return createRepository({ ...input, path: await folderOf(String(input.path), signal) }, approval, runner, signal);
+      if (action === 'repo_clone') return cloneRepository({ ...input, path: await folderOf(String(input.path), signal) }, approval, runner, signal);
       const root = await repositoryRoot(String(input.path), signal);
       const number = typeof input.number === 'number' ? String(input.number) : undefined;
       const state = typeof input.state === 'string' ? input.state : 'open';
       if (GITHUB_READ.has(action)) {
         const args: Record<string, string[]> = {
+          repo_view: ['repo', 'view', '--json', 'nameWithOwner,description,url,isPrivate,defaultBranchRef,stargazerCount,pushedAt,latestRelease'],
+          release_list: ['release', 'list', '--limit', '10'],
           pr_list: ['pr', 'list', '--state', state, '--limit', '20', '--json', 'number,title,author,headRefName,state,isDraft,updatedAt,url'],
           pr_view: ['pr', 'view', ...(number ? [number] : []), '--json', 'number,title,state,author,headRefName,baseRefName,body,url,reviewDecision,mergeable,comments,files'],
           pr_checks: ['pr', 'checks', ...(number ? [number] : [])],
@@ -422,12 +448,24 @@ function registerGitHubTool(registry: ToolRegistry, repositoryRoot: RepositoryRo
       if (named.code !== 0 || !/^[\w.-]+\/[\w.-]+$/u.test(repo)) {
         return { status: 'failed', action, output: `No GitHub repository was found for ${root}: ${named.output.slice(0, 300)}` };
       }
-      const command = {
+      const deleteBranch = input.delete_branch === true ? ' --delete-branch' : '';
+      // "12 " or "" (the current branch's PR).
+      const target = number === undefined ? '' : `${number} `;
+      const commands: Record<string, string> = {
         pr_create: `gh pr create --repo ${quote(repo)} --title ${quote(title)} --body ${quote(body)}${typeof input.base === 'string' ? ` --base ${quote(input.base)}` : ''}${input.draft === true ? ' --draft' : ''}`,
-        pr_comment: `gh pr comment ${number ?? ''} --repo ${quote(repo)} --body ${quote(body)}`,
+        pr_comment: `gh pr comment ${target}--repo ${quote(repo)} --body ${quote(body)}`,
+        pr_review: `gh pr review ${target}--repo ${quote(repo)} --${String(input.event).replace('_', '-')}${body ? ` --body ${quote(body)}` : ''}`,
+        pr_merge: `gh pr merge ${target}--repo ${quote(repo)} --${typeof input.method === 'string' ? input.method : 'merge'}${deleteBranch}`,
+        pr_close: `gh pr close ${target}--repo ${quote(repo)}${deleteBranch}`,
+        pr_checkout: `gh pr checkout ${target}--repo ${quote(repo)}`,
         issue_create: `gh issue create --repo ${quote(repo)} --title ${quote(title)} --body ${quote(body)}`,
-        issue_comment: `gh issue comment ${number ?? ''} --repo ${quote(repo)} --body ${quote(body)}`,
-      }[action as 'pr_create' | 'pr_comment' | 'issue_create' | 'issue_comment'];
+        issue_comment: `gh issue comment ${target}--repo ${quote(repo)} --body ${quote(body)}`,
+        issue_close: `gh issue close ${target}--repo ${quote(repo)}${body ? ` --comment ${quote(body)}` : ''}`,
+        run_rerun: `gh run rerun ${target}--repo ${quote(repo)}`,
+        release_create: `gh release create ${quote(String(input.tag))} --repo ${quote(repo)}${title ? ` --title ${quote(title)}` : ''}${body ? ` --notes ${quote(body)}` : ' --generate-notes'}`,
+      };
+      const command = commands[action];
+      if (command === undefined) throw new ToolFailure(`${action} is not a GitHub action.`, 'unsupported-operation');
       // Writes are never "always allowed": each one is shown.
       return approvedRun(command, root, approval, runner, undefined, signal, 90);
     },

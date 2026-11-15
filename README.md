@@ -211,7 +211,7 @@ loaded. [`.env.example`](.env.example) lists every setting.
 | `VYOM_MAX_TOOL_CALLS` | `80` | Tool calls per request |
 | `VYOM_COMMAND_TIMEOUT_MS` | `120000` | Maximum command run time |
 | `VYOM_ALLOWED_ROOTS` | whole Mac | JSON array to restrict file access |
-| `VYOM_SEARXNG_URL` | unset | Your SearXNG instance for web search; without it, Wikipedia and Google News are used |
+| `VYOM_SEARXNG_URL` | unset | Your SearXNG instance for web search; without it, DuckDuckGo is used (Wikipedia and Google News if it is unavailable) |
 | `VYOM_PROVIDER` | `ollama` | `placeholder` runs without a model |
 | `VYOM_DEBUG` | unset | `1` prints diagnostic events |
 

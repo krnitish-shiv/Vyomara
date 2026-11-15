@@ -6,7 +6,17 @@ export interface SessionToolCall {
 }
 
 export type SessionMessage =
-  | { readonly role: 'user'; readonly content: string; readonly images?: readonly string[] }
+  | {
+    readonly role: 'user';
+    readonly content: string;
+    readonly images?: readonly string[];
+    /**
+     * Facts from the app for this turn (date, project, git state, memories),
+     * sent ahead of the message. Kept out of the system prompt so that it and
+     * the tool list never change within a conversation (see buildTurnContext).
+     */
+    readonly context?: string;
+  }
   | { readonly role: 'assistant'; readonly content: string; readonly kind?: never }
   | {
     readonly role: 'assistant';

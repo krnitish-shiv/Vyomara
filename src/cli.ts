@@ -1,5 +1,8 @@
 import { spawn } from 'node:child_process';
+import { existsSync } from 'node:fs';
 import { McpManager, readMcpConfig } from './tools/mcp-client.ts';
+import { ChromeBrowser } from './desktop/chrome-browser.ts';
+import { MacSystemControl } from './desktop/mac-system-control.ts';
 import { createInterface } from 'node:readline';
 import { readModelSettings, runRequest, withSavedModelSettings } from './app/application.ts';
 import { AgentError } from './agent/agent.ts';
@@ -158,6 +161,10 @@ const terminalActionApproval: ActionApprovalPort = {
     }
     if (action.kind === 'app-control') {
       process.stderr.write(`\n${bold(`▶ ${action.action} ${action.application}`)}\n`);
+      return askYesNo('Allow?');
+    }
+    if (action.kind === 'system') {
+      process.stderr.write(`\n${bold('▶ Mac')} ${action.detail}\n`);
       return askYesNo('Allow?');
     }
     if (action.kind === 'mcp') {
@@ -373,6 +380,9 @@ async function main(): Promise<void> {
     mcpAllowed: new Set<string>(),
     web: new HttpWebClient(config.searxngUrl === undefined ? {} : { searxngUrl: config.searxngUrl }),
     ...(process.platform === 'darwin' ? { launcher: new MacApplicationLauncher() } : {}),
+    // Same browsing as the desktop app: the user's own Chrome, visibly, after approval.
+    ...(process.platform === 'darwin' && existsSync('/Applications/Google Chrome.app') ? { browser: new ChromeBrowser() } : {}),
+    ...(process.platform === 'darwin' ? { system: new MacSystemControl() } : {}),
   };
   const fileOperationApproval = terminalFileApproval(config);
   console.error(dim(config.provider === 'ollama'

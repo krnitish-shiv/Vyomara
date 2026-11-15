@@ -3,6 +3,55 @@
 All notable changes to Vyomara are listed here. Versions follow
 [Semantic Versioning](https://semver.org/).
 
+## [2.0.0] — 2026-11-15
+
+Vyom now works like a full coding agent on your Mac: it keeps its prompt
+cached so every turn starts fast, searches the web without any setup, and
+reaches GitHub, VS Code, Chrome, and the Mac itself through approved tools.
+
+### Faster
+- The system prompt and tool list stay identical for a whole conversation;
+  per-turn facts (date, project, git state, memories, project instructions)
+  travel with your message. On a 14B model a turn after an edit starts in
+  about a second instead of ~40 s (ADR-0026).
+
+### Coding agent
+- Git tools (`git_info`, `git_commit`, `git_branch`, `git_sync`),
+  `multi_edit`, `check_problems`, background commands, notebook editing.
+- Slash commands (`/review`, `/fix`, `/test`, `/commit`, `/explain`, and the
+  project's own), afterEdit hooks, project instructions from `AGENTS.md`,
+  `CLAUDE.md`, and similar files.
+- Plan mode, pictures for vision models, an `explore` helper for broad code
+  searches, and summaries of early turns in long conversations.
+- `vscode`: open a file at a line, compare two files, add a folder, install
+  or list extensions.
+
+### GitHub
+- `github`: repositories (view, create, clone), pull requests (list, view,
+  checks, diff, create, comment, review, merge, close, checkout), issues
+  (list, view, create, comment, close), workflow runs (list, failed-step
+  logs, rerun), releases (list, create). Every write is shown as the exact
+  `gh` command.
+
+### Web and browser
+- Web search without configuration (DuckDuckGo; SearXNG when configured;
+  Wikipedia and Google News as a fallback), `fetch_url`, `news_headlines`,
+  weather, exchange rates, latest software versions.
+- `browser` drives your own Chrome: search, open, read, click, type into a
+  site's search box or form, find text, scroll, back, tabs. Also in the CLI.
+
+### Mac
+- `mac_control`: volume, mute, dark mode, lock screen, sleep, screenshot,
+  clipboard, notifications, typing and key presses in the front app, System
+  Settings panes, Wi-Fi, running apps. Each action is shown and approved.
+- `control_application` finds Finder and other system apps, and apps
+  anywhere on disk through Spotlight.
+
+### Platform
+- MCP servers from `mcp.json`, command permissions kept across restarts
+  (with safe `*` patterns), memories across conversations, everyday tools
+  (time, calculator, units, dates, Mac status).
+
 ## [1.0.0] — 2026-11-07
 
 The first release of Vyomara: a local-first AI agent for macOS with two

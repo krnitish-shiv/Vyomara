@@ -207,6 +207,23 @@ test('the github tool reads without approval and shows every write first', async
   const create = await github?.run({ path: root, action: 'pr_create', title: "Fix cart's total", body: 'Adds prices.' }, signal) as Record<string, unknown>;
   assert.equal(create.status, 'rejected');
   assert.deepEqual(asked, [`gh pr create --repo 'krnitish-shiv/shop' --title 'Fix cart'\\''s total' --body 'Adds prices.'`]);
+  // Newer actions: merges, reviews, releases, and clones are shown as the exact command too.
+  const merge = await github?.run({ path: root, action: 'pr_merge', number: 12, method: 'squash', delete_branch: true }, signal) as Record<string, unknown>;
+  assert.equal(merge.status, 'rejected');
+  assert.equal(asked.at(-1), "gh pr merge 12 --repo 'krnitish-shiv/shop' --squash --delete-branch");
+  await github?.run({ path: root, action: 'pr_review', event: 'approve' }, signal);
+  assert.equal(asked.at(-1), "gh pr review --repo 'krnitish-shiv/shop' --approve");
+  await github?.run({ path: root, action: 'release_create', tag: 'v2.0.0', title: 'Vyomara 2.0' }, signal);
+  assert.equal(asked.at(-1), "gh release create 'v2.0.0' --repo 'krnitish-shiv/shop' --title 'Vyomara 2.0' --generate-notes");
+  await github?.run({ path: root, action: 'issue_close', number: 3, body: 'Fixed in #4' }, signal);
+  assert.equal(asked.at(-1), "gh issue close 3 --repo 'krnitish-shiv/shop' --comment 'Fixed in #4'");
+  await github?.run({ path: root, action: 'repo_clone', name: 'krnitish-shiv/shop' }, signal);
+  assert.equal(asked.at(-1), "gh repo clone 'krnitish-shiv/shop'");
+  const view = await github?.run({ path: root, action: 'repo_view' }, signal) as Record<string, unknown>;
+  assert.equal(view.output, 'krnitish-shiv/shop');
+  assert.match(github?.inputError?.({ path: root, action: 'repo_clone', name: 'bad name' }) ?? '', /owner\/repo/u);
+  assert.match(github?.inputError?.({ path: root, action: 'pr_review', event: 'request_changes' }) ?? '', /body is required/u);
+  assert.match(github?.inputError?.({ path: root, action: 'pr_merge', method: 'force' }) ?? '', /method must be/u);
   assert.match(github?.inputError?.({ path: root, action: 'issue_comment' }) ?? '', /number is required/u);
   assert.equal(github?.normalizeInput?.({ path: root, action: 'issue_view', number: '#7' }) && (github.normalizeInput({ path: root, action: 'issue_view', number: '#7' }) as Record<string, unknown>).number, 7);
 });

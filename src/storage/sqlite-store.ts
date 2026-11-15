@@ -106,7 +106,9 @@ function validToolCalls(value: unknown): value is SessionMessage & {
 function validSessionMessage(value: unknown): value is SessionMessage {
   if (!isRecord(value)) return false;
   if (value.role === 'user') {
-    return exactKeys(value, ['role', 'content']) && typeof value.content === 'string';
+    if (typeof value.content !== 'string') return false;
+    return exactKeys(value, ['role', 'content']) ||
+      (exactKeys(value, ['role', 'content', 'context']) && typeof value.context === 'string');
   }
   if (value.role === 'assistant' && value.kind === undefined) {
     return exactKeys(value, ['role', 'content']) && typeof value.content === 'string';

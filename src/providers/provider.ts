@@ -132,8 +132,10 @@ function ollamaMessage(message: SessionMessage): Record<string, unknown> {
   if (message.role === 'tool') {
     return { role: 'tool', tool_name: message.toolId, content: message.content };
   }
-  if (message.role === 'user' && message.images && message.images.length > 0) {
-    return { role: 'user', content: message.content, images: message.images };
+  if (message.role === 'user') {
+    // The app's context for the turn goes ahead of the user's words (see buildTurnContext).
+    const content = message.context === undefined ? message.content : `${message.context}\n\n${message.content}`;
+    return { role: 'user', content, ...(message.images && message.images.length > 0 ? { images: message.images } : {}) };
   }
   return { role: message.role, content: message.content };
 }

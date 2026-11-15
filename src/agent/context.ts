@@ -7,6 +7,7 @@ function messageChars(message: SessionMessage): number {
   if (message.role === 'assistant' && message.kind === 'tool-call') {
     return message.content.length + JSON.stringify(message.toolCalls).length + 32;
   }
+  if (message.role === 'user') return message.content.length + (message.context?.length ?? 0) + 16;
   return message.content.length + 16;
 }
 
