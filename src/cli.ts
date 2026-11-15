@@ -14,6 +14,7 @@ import type { FileOperationApprovalPort } from './desktop/contracts.ts';
 import { FileOperationApprovalManager } from './desktop/file-operation-approval.ts';
 import { MacApplicationLauncher } from './desktop/mac-application-launcher.ts';
 import { formatUnifiedDiff } from './shared/diff.ts';
+import { DEFAULT_PERSONA, isPersonaId, PERSONAS, personaFor, type PersonaId } from './shared/persona.ts';
 import { ApprovalMemory } from './tools/action-tools.ts';
 import type { ActionApprovalPort } from './tools/action-tools.ts';
 import { ShellCommandRunner } from './tools/command-runner.ts';
@@ -209,6 +210,7 @@ function printStorageUsage(): void {
     '  pnpm dev                       (interactive chat)',
     '  pnpm dev -- "your request"',
     '  pnpm dev -- --model qwen3:14b "your request"',
+    '  pnpm dev -- --agent kavach|yatra|khoj|lipi|vyom|vyomara "your request"',
     '  pnpm dev -- --session <session-id> "your next turn"',
     '  pnpm dev -- --sessions list|show <session-id>|delete <session-id> [--confirm]',
     '  pnpm dev -- --memory list|show <memory-id>|save "content" --confirm|delete <memory-id> --confirm',
@@ -329,7 +331,8 @@ async function main(): Promise<void> {
   }
   let sessionId: string | undefined;
   let modelOverride: string | undefined;
-  while (args[0] === '--session' || args[0] === '--model') {
+  let persona: PersonaId = DEFAULT_PERSONA;
+  while (args[0] === '--session' || args[0] === '--model' || args[0] === '--agent') {
     const flag = args.shift();
     const value = args.shift();
     if (!value) {
@@ -338,7 +341,15 @@ async function main(): Promise<void> {
       return;
     }
     if (flag === '--session') sessionId = value;
-    else modelOverride = value;
+    else if (flag === '--agent') {
+      const id = value.toLowerCase();
+      if (!isPersonaId(id)) {
+        console.error(`Unknown assistant "${value}". Choose one of: ${Object.keys(PERSONAS).join(', ')}.`);
+        process.exitCode = 2;
+        return;
+      }
+      persona = id;
+    } else modelOverride = value;
   }
   try {
     // Settings saved from the app apply unless the environment sets them explicitly.
@@ -383,11 +394,22 @@ async function main(): Promise<void> {
     // Same browsing as the desktop app: the user's own Chrome, visibly, after approval.
     ...(process.platform === 'darwin' && existsSync('/Applications/Google Chrome.app') ? { browser: new ChromeBrowser() } : {}),
     ...(process.platform === 'darwin' ? { system: new MacSystemControl() } : {}),
+    // Screen time recorded by the desktop app, readable here too.
+    usage: {
+      usageSince: (day: string) => {
+        const store = new SqliteStore(config.dataDirectory);
+        try {
+          return store.appUsageSince(day);
+        } finally {
+          store.close();
+        }
+      },
+    },
   };
   const fileOperationApproval = terminalFileApproval(config);
   console.error(dim(config.provider === 'ollama'
-    ? `Vyom · local Ollama · ${config.ollamaModel} · ${config.ollamaNumCtx.toLocaleString()} token context`
-    : 'Vyom · deterministic placeholder (no model service is contacted)'));
+    ? `${personaFor(persona).name} · local Ollama · ${config.ollamaModel} · ${config.ollamaNumCtx.toLocaleString()} token context`
+    : `${personaFor(persona).name} · deterministic placeholder (no model service is contacted)`));
 
   const ask = async (prompt: string): Promise<boolean> => {
     const controller = new AbortController();
@@ -396,6 +418,7 @@ async function main(): Promise<void> {
     try {
       const result = await runRequest(prompt, controller.signal, config, logger, {
         ...(sessionId === undefined ? {} : { sessionId }),
+        persona,
         onToolActivity: printActivity,
         onPlan: printPlan,
         fileOperationApproval,

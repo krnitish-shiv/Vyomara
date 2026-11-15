@@ -149,7 +149,7 @@ test('SQLite backups are consistent, owner-only, and never overwrite an existing
     (backup.prepare('PRAGMA integrity_check').get() as { integrity_check: string }).integrity_check,
     'ok',
   );
-  assert.equal((backup.prepare('PRAGMA user_version').get() as { user_version: number }).user_version, 2);
+  assert.equal((backup.prepare('PRAGMA user_version').get() as { user_version: number }).user_version, 3);
   assert.equal(
     (backup.prepare('SELECT message_json FROM session_messages').get() as { message_json: string })
       .message_json.includes('private conversation fixture'),

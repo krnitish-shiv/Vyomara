@@ -239,6 +239,11 @@ export interface LauncherPort {
   openUrl(url: string, application: string | undefined, signal: AbortSignal): Promise<void>;
 }
 
+export interface UsagePort {
+  /** Per-app active seconds per day from `fromDay` (YYYY-MM-DD) on. */
+  usageSince(fromDay: string): readonly { day: string; app: string; seconds: number }[];
+}
+
 export interface ActionToolPorts {
   readonly approval: ActionApprovalPort;
   /** Remembers commands approved with "always allow"; without it every run asks. */
@@ -251,6 +256,8 @@ export interface ActionToolPorts {
   readonly browser?: BrowserPort;
   /** Enables mac_control: volume, dark mode, lock, clipboard, keystrokes, settings panes, Wi-Fi. */
   readonly system?: SystemControlPort;
+  /** Enables screen_time: per-app active time the desktop app records locally. */
+  readonly usage?: UsagePort;
   /** Tools from the user's MCP servers (mcp.json); each call is approved. */
   readonly mcp?: McpPort;
   /** MCP tools the user chose "Always allow" for, until the app quits. */

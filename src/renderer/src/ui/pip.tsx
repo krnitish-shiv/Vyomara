@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from 'react';
 import type { DesktopPipCommand, DesktopPipState } from '../../../desktop/contracts.ts';
 import { VoiceOrb } from './brand.tsx';
+import { PERSONAS } from '../../../shared/persona.ts';
 
 function send(command: DesktopPipCommand): void {
   window.vyomara.sendPipCommand(command);
@@ -91,7 +92,7 @@ export function PipView() {
           title={state?.voiceReady
             ? speaking && listening ? `Interrupt ${name}` : listening ? 'End the conversation (⌥Space)' : `Talk to ${name} (⌥Space)`
             : 'Set up voice in the Vyomara window'}
-          twin={name === 'Vyomara' ? 'vyomara' : 'vyom'}
+          twin={Object.values(PERSONAS).find(persona => persona.name === name)?.id ?? 'vyom'}
           onActivate={() => send({ type: 'toggle-listening' })}
         />
       </div>

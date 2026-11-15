@@ -64,8 +64,10 @@ export interface AgentOptions {
    * the full tool list, so the cached prompt matches; others are refused.
    */
   readonly allowedTools?: ReadonlySet<string>;
-  /** Which assistant (name, gender) answers. */
+  /** Which assistant (name, gender, focus) answers. */
   readonly persona?: PersonaId;
+  /** User-written character for that assistant, woven into the system prompt. */
+  readonly character?: string;
   /** Lasting facts from earlier conversations, shown in the system prompt. */
   readonly memory?: MemoryStore;
   /** Overrides environment discovery (used by tests). */
@@ -621,7 +623,7 @@ const INSTRUCTIONS_RECENT_TURNS = 8;
 async function prepareTurn(
   prompt: string,
   signal: AbortSignal,
-  options: Pick<AgentOptions, 'provider' | 'tools' | 'config' | 'session' | 'persona' | 'memory' | 'environment'>,
+  options: Pick<AgentOptions, 'provider' | 'tools' | 'config' | 'session' | 'persona' | 'character' | 'memory' | 'environment'>,
 ): Promise<{
   readonly toolCapable: boolean;
   readonly modelTools: readonly ModelToolDefinition[];
@@ -642,6 +644,7 @@ async function prepareTurn(
   const system = buildSystemPrompt(environment, modelTools, {
     chatOnly: !toolCapable,
     ...(options.persona ? { persona: options.persona } : {}),
+    ...(options.character ? { character: options.character } : {}),
   });
   // Project instructions are long: send them once per project, and again once they left the recent turns.
   const project = detected.activeProject;
@@ -661,7 +664,7 @@ async function prepareTurn(
  */
 export async function primeAgent(
   signal: AbortSignal,
-  options: Pick<AgentOptions, 'provider' | 'tools' | 'config' | 'session' | 'persona' | 'memory' | 'environment'>,
+  options: Pick<AgentOptions, 'provider' | 'tools' | 'config' | 'session' | 'persona' | 'character' | 'memory' | 'environment'>,
 ): Promise<void> {
   if (!options.provider.prime) return;
   const { modelTools, system } = await prepareTurn('', signal, options);

@@ -180,7 +180,7 @@ function prepareDatabaseFile(path: string): void {
 function migrate(database: DatabaseSync): void {
   const versionRow = database.prepare('PRAGMA user_version').get();
   const version = isRecord(versionRow) ? versionRow.user_version : undefined;
-  if (typeof version !== 'number' || version < 0 || version > 2) {
+  if (typeof version !== 'number' || version < 0 || version > 3) {
     throw new PersistenceError('The local database version is not supported.', 'database-error');
   }
 
@@ -251,6 +251,27 @@ function migrate(database: DatabaseSync): void {
       throw new PersistenceError('The local database migration failed safely.', 'database-error');
     }
   }
+
+  if (version < 3) {
+    database.exec('BEGIN IMMEDIATE');
+    try {
+      database.exec(`
+        CREATE TABLE IF NOT EXISTS app_usage (
+          day TEXT NOT NULL CHECK (day GLOB '[0-9][0-9][0-9][0-9]-[0-9][0-9]-[0-9][0-9]'),
+          app TEXT NOT NULL CHECK (length(app) BETWEEN 1 AND 128),
+          seconds INTEGER NOT NULL CHECK (seconds >= 0),
+          PRIMARY KEY (day, app)
+        ) STRICT;
+
+        PRAGMA user_version = 3;
+      `);
+      database.exec('COMMIT');
+    } catch (error) {
+      database.exec('ROLLBACK');
+      if (error instanceof PersistenceError) throw error;
+      throw new PersistenceError('The local database migration failed safely.', 'database-error');
+    }
+  }
 }
 
 export function defaultDataDirectory(): string {
@@ -274,7 +295,8 @@ export class SqliteStore {
         enableDoubleQuotedStringLiterals: false,
       });
       chmodSync(this.databasePath, 0o600);
-      database.exec('PRAGMA foreign_keys = ON; PRAGMA synchronous = FULL; PRAGMA secure_delete = ON;');
+      // busy_timeout: the desktop app's screen-time sampler keeps a second connection open.
+      database.exec('PRAGMA foreign_keys = ON; PRAGMA synchronous = FULL; PRAGMA secure_delete = ON; PRAGMA busy_timeout = 2000;');
       migrate(database);
     } catch (error) {
       database?.close();
@@ -461,6 +483,39 @@ export class SqliteStore {
       throw new PersistenceError('Stored application settings are invalid.', 'invalid-data');
     }
     return row.value;
+  }
+
+  /** Add actively-used seconds for an app on a day ("2026-11-15"). */
+  addAppUsage(day: string, app: string, seconds: number): void {
+    this.assertOpen();
+    if (
+      !/^\d{4}-\d{2}-\d{2}$/.test(day) ||
+      app.length === 0 || app.length > 128 ||
+      !Number.isInteger(seconds) || seconds <= 0 || seconds > 86_400
+    ) {
+      throw new PersistenceError('The screen-time sample is invalid.', 'invalid-data');
+    }
+    this.#database.prepare(`
+      INSERT INTO app_usage (day, app, seconds) VALUES (?, ?, ?)
+      ON CONFLICT(day, app) DO UPDATE SET seconds = seconds + excluded.seconds
+    `).run(day, app, seconds);
+  }
+
+  /** Per-app seconds on each day from `fromDay` (inclusive) on, busiest first. */
+  appUsageSince(fromDay: string): readonly { day: string; app: string; seconds: number }[] {
+    this.assertOpen();
+    if (!/^\d{4}-\d{2}-\d{2}$/.test(fromDay)) {
+      throw new PersistenceError('The screen-time query is invalid.', 'invalid-data');
+    }
+    const rows = this.#database
+      .prepare('SELECT day, app, seconds FROM app_usage WHERE day >= ? ORDER BY day DESC, seconds DESC')
+      .all(fromDay);
+    return rows.map(row => {
+      if (!isRecord(row) || typeof row.day !== 'string' || typeof row.app !== 'string' || typeof row.seconds !== 'number') {
+        throw new PersistenceError('Stored screen-time data is invalid.', 'invalid-data');
+      }
+      return { day: row.day, app: row.app, seconds: row.seconds };
+    });
   }
 
   setAppSettings(settings: Readonly<Record<string, string>>): void {
@@ -653,14 +708,18 @@ export class SqliteStore {
       }
       source = new DatabaseSync(sourcePath, { readOnly: true });
       const versionRow = source.prepare('PRAGMA user_version').get();
-      if (!isRecord(versionRow) || versionRow.user_version !== 2) {
+      if (!isRecord(versionRow) || (versionRow.user_version !== 2 && versionRow.user_version !== 3)) {
         throw new PersistenceError('The selected backup version is not supported.', 'invalid-data');
       }
-      const expectedSchema = this.#database.prepare(`
+      const allExpected = this.#database.prepare(`
         SELECT type, name, sql FROM sqlite_schema
         WHERE name NOT LIKE 'sqlite_%'
         ORDER BY type, name
       `).all();
+      // A version-2 backup predates app_usage; migrate() adds it when the restored file is opened.
+      const expectedSchema = versionRow.user_version === 2
+        ? allExpected.filter(row => !isRecord(row) || row.name !== 'app_usage')
+        : allExpected;
       const backupSchema = source.prepare(`
         SELECT type, name, sql FROM sqlite_schema
         WHERE name NOT LIKE 'sqlite_%'

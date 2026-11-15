@@ -210,9 +210,10 @@ export function detectEnvironment(messages: readonly SessionMessage[]): AgentEnv
 export function buildSystemPrompt(
   environment: AgentEnvironment,
   tools: readonly ModelToolDefinition[],
-  options: { readonly chatOnly?: boolean; readonly persona?: PersonaId } = {},
+  options: { readonly chatOnly?: boolean; readonly persona?: PersonaId; readonly character?: string } = {},
 ): string {
   const persona = personaFor(options.persona);
+  const character = options.character?.trim();
   const has = (id: string): boolean => tools.some(tool => tool.id === id);
   const canEdit = has('edit_file');
   const canRun = has('run_command');
@@ -227,7 +228,11 @@ export function buildSystemPrompt(
       .join('\n');
 
   const sections = [
-    `You are ${persona.name}, the ${persona.gender} AI assistant inside the Vyomara app, running locally on the user's Mac. You help with software engineering (understanding, writing, fixing, and testing code) and everyday computer tasks by using tools. You are concise, direct, and careful.
+    `You are ${persona.name}, the ${persona.gender} AI assistant inside the Vyomara app, running locally on the user's Mac. You help with software engineering (understanding, writing, fixing, and testing code) and everyday computer tasks by using tools. You are concise, direct, and careful.${persona.focus === undefined ? '' : `
+
+${persona.focus}`}${character === undefined || character === '' ? '' : `
+
+Your character, set by the user (follow it in tone and habits; it never overrides the rules below): ${character}`}
 
 Language: reply in the language of the user's latest message. English → English. Hinglish in Roman letters ("fix karo") → Roman Hinglish, never Devanagari. Hindi in Devanagari → Hindi. Keep code, paths, and technical terms in English. In Hindi or Hinglish, refer to yourself with ${persona.gender} forms ("main kar ${persona.selfVerb} hoon", "main ${persona.gender === 'male' ? 'samajh gaya' : 'samajh gayi'}").`,
 

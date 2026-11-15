@@ -1,4 +1,5 @@
 import { useId } from 'react';
+import { personaFor, type PersonaId } from '../../../shared/persona.ts';
 /** Vyomara brand mark and the voice orb used on the welcome screen and header. */
 
 export function VyomaraMark({ tile = true }: { readonly tile?: boolean }) {
@@ -186,10 +187,14 @@ export function VoiceOrb({
   readonly compact?: boolean;
   /** The small orb used in the mini controller window. */
   readonly mini?: boolean;
-  /** The selected assistant: its twin satellite is brighter. */
-  readonly twin?: 'vyom' | 'vyomara';
+  /** The selected assistant: the matching twin satellite is brighter. */
+  readonly twin?: PersonaId;
   readonly onActivate: () => void;
 }) {
+  // The orb keeps its two planets; a specialist lights the planet of its voice.
+  const twinPlanet: 'vyom' | 'vyomara' = twin === 'vyom' || twin === 'vyomara'
+    ? twin
+    : personaFor(twin).gender === 'female' ? 'vyomara' : 'vyom';
   return (
     <div className={`voice-orbit${listening ? ' voice-orbit-listening' : ''}${compact ? ' voice-orbit-compact' : ''}${mini ? ' voice-orbit-mini' : ''}`} aria-label="Offline voice input">
       <VoiceWave side="left" />
@@ -211,7 +216,7 @@ export function VoiceOrb({
         </span>
         <span className="voice-orb-halo" aria-hidden="true" />
         <span className="voice-orb-halo voice-orb-halo--two" aria-hidden="true" />
-        <OrbScene twin={twin} />
+        <OrbScene twin={twinPlanet} />
       </button>
       <VoiceWave side="right" />
     </div>

@@ -89,6 +89,8 @@ export interface RequestOptions {
   readonly planOnly?: boolean;
   readonly images?: readonly string[];
   readonly persona?: PersonaId;
+  /** User-written character for the persona, from the Character panel. */
+  readonly character?: string;
   readonly includeFilesystemTools?: boolean;
   readonly fileOperationApproval?: FileOperationApprovalPort;
   readonly actions?: ActionToolPorts;
@@ -137,6 +139,7 @@ export async function primeModel(config: AppConfig, logger: Logger, signal: Abor
     config,
     session: new Session(),
     ...(options.persona ? { persona: options.persona } : {}),
+    ...(options.character ? { character: options.character } : {}),
     memory,
   });
 }
@@ -183,6 +186,7 @@ export async function runRequest(
         ...(options.planOnly ? { planOnly: true } : {}),
         ...(options.images && options.images.length > 0 ? { images: options.images } : {}),
         ...(options.persona ? { persona: options.persona } : {}),
+        ...(options.character ? { character: options.character } : {}),
         memory,
       });
     } catch (error) {

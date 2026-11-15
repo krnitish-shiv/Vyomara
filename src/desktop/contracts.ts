@@ -282,9 +282,13 @@ export interface VyomaraDesktopApi {
   getUndoStatus(): Promise<DesktopUndoStatus>;
   /** Put back the newest request's file changes. */
   undoLastChange(): Promise<DesktopUndoResult>;
-  /** Which assistant answers and speaks: Vyom (male) or Vyomara (female). */
+  /** Which assistant answers and speaks: a lead (Vyom, Vyomara) or a specialist. */
   getPersona(): Promise<PersonaId>;
   setPersona(id: PersonaId): Promise<PersonaId>;
+  /** User-written character per assistant, shown in the Character panel. */
+  getCharacters(): Promise<Partial<Record<PersonaId, string>>>;
+  /** Save one assistant's character; an empty string clears it. Returns all characters. */
+  setCharacter(id: PersonaId, character: string): Promise<Partial<Record<PersonaId, string>>>;
   onActivity(listener: (event: DiagnosticEvent) => void): () => void;
 }
 

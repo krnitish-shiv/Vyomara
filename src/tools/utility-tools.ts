@@ -597,6 +597,44 @@ export function registerUtilityTools(registry: ToolRegistry, ports?: ActionToolP
     parameters: { type: 'object', properties: {}, additionalProperties: false },
   }, () => undefined, systemInfo));
 
+  const usage = ports?.usage;
+  if (usage) {
+    registry.register(simpleTool<{ days?: string }>({
+      id: 'screen_time',
+      effect: 'read',
+      description: 'How long the user actively used each app on this Mac, recorded locally by the Vyomara app while it runs. Use for "aaj kitna time VS Code pe laga", "screen time", "which apps did I use this week". days: how many days back to include (default 1 = today, max 30).',
+      parameters: {
+        type: 'object',
+        properties: { days: { type: 'string', description: 'Days to include: 1 = today only (default), 7 = this week.', maxLength: 2 } },
+        additionalProperties: false,
+      },
+    }, input => {
+      if (input.days === undefined) return undefined;
+      const days = parseNumber(input.days);
+      return days !== undefined && Number.isInteger(days) && days >= 1 && days <= 30 ? undefined : 'days must be a whole number from 1 to 30.';
+    }, async input => {
+      const days = input.days === undefined ? 1 : (parseNumber(input.days) as number);
+      const from = new Date();
+      from.setDate(from.getDate() - (days - 1));
+      const rows = usage.usageSince(from.toLocaleDateString('en-CA'));
+      const byApp = new Map<string, number>();
+      for (const row of rows) byApp.set(row.app, (byApp.get(row.app) ?? 0) + row.seconds);
+      const apps = [...byApp.entries()]
+        .sort((a, b) => b[1] - a[1])
+        .map(([app, seconds]) => ({ app, minutes: Math.round(seconds / 60) }));
+      const totalMinutes = apps.reduce((sum, entry) => sum + entry.minutes, 0);
+      return {
+        from: from.toLocaleDateString('en-CA'),
+        days,
+        total: `${Math.floor(totalMinutes / 60)}h ${totalMinutes % 60}m`,
+        apps: apps.slice(0, 20),
+        note: rows.length === 0
+          ? 'No usage recorded yet. Time is only recorded while the Vyomara app is running.'
+          : 'Active time at the screen; recorded only while the Vyomara app runs, and kept only on this Mac.',
+      };
+    }));
+  }
+
   const approval = ports?.approval;
   const fetchRaw = ports?.web?.fetchRaw?.bind(ports.web);
   if (!approval || !fetchRaw) return;

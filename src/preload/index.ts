@@ -186,6 +186,12 @@ const api: VyomaraDesktopApi = {
   setPersona(id: PersonaId) {
     return ipcRenderer.invoke('vyomara:persona-set', id);
   },
+  getCharacters() {
+    return ipcRenderer.invoke('vyomara:characters-get');
+  },
+  setCharacter(id: PersonaId, character: string) {
+    return ipcRenderer.invoke('vyomara:character-set', { persona: id, character });
+  },
   onActivity(listener: (event: DiagnosticEvent) => void) {
     const handler = (_event: Electron.IpcRendererEvent, activity: DiagnosticEvent): void => {
       listener(activity);

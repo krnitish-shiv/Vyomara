@@ -38,8 +38,8 @@ export class LocalWhisperServer {
   }
 
   /** Start (or reuse) a server for this model and language. */
-  start(modelPath: string, language: string, binary = resolveWhisperServer()): Promise<void> {
-    const key = `${modelPath}\n${language}`;
+  start(modelPath: string, language: string, binary = resolveWhisperServer(), vadModelPath?: string): Promise<void> {
+    const key = `${modelPath}\n${language}\n${vadModelPath ?? ''}`;
     if (this.#key === key && this.#starting) return this.#starting;
     this.stop();
     if (!binary) return Promise.reject(new Error('whisper-server was not found. Install it with `brew install whisper.cpp`.'));
@@ -54,6 +54,13 @@ export class LocalWhisperServer {
         '--threads', '8',
         // A 15-second audio context: roughly halves encode time for short phrases.
         '--audio-ctx', '768',
+        // Tokens like "(music)" never become words.
+        '--suppress-nst',
+        // Silero VAD keeps only the stretches with speech, so breaths and
+        // keyboard noise stop turning into hallucinated words. The low
+        // threshold and generous padding keep quiet speech (checked against
+        // recorded Hinglish clips: nothing lost, trailing junk gone).
+        ...(vadModelPath ? ['--vad', '--vad-model', vadModelPath, '--vad-threshold', '0.30', '--vad-speech-pad-ms', '200'] : []),
       ], { stdio: 'ignore', shell: false });
       this.#child = child;
       child.once('exit', () => {

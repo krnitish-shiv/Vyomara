@@ -5,7 +5,7 @@ import { MemoryStore } from '../storage/memory-store.ts';
 import { canShowDiff, VSCodeDiffPreview } from '../desktop/vscode-diff.ts';
 import { ChangeJournal } from '../desktop/change-journal.ts';
 import { DEFAULT_PERSONA, isPersonaId, personaFor, type PersonaId } from '../shared/persona.ts';
-import { app, BrowserWindow, dialog, globalShortcut, ipcMain, screen, session, shell, systemPreferences } from 'electron';
+import { app, BrowserWindow, dialog, globalShortcut, ipcMain, Notification, screen, session, shell, systemPreferences } from 'electron';
 import type { SaveDialogOptions } from 'electron';
 import { fileURLToPath, pathToFileURL } from 'node:url';
 import { mkdir, readFile, rename, writeFile } from 'node:fs/promises';
@@ -28,7 +28,8 @@ import type { RequestOptions, SavedModelSettings } from '../app/application.ts';
 import type { DesktopFileOperationProposal, DesktopUndoResult, DesktopUndoStatus } from '../desktop/contracts.ts';
 import { loadConfig, validateOllamaModel } from '../config/config.ts';
 import { OllamaProvider } from '../providers/provider.ts';
-import { PersistenceError } from '../storage/sqlite-store.ts';
+import { PersistenceError, SqliteStore } from '../storage/sqlite-store.ts';
+import { UsageSampler } from '../desktop/usage-sampler.ts';
 import { ProviderError } from '../providers/provider.ts';
 import { ToolExecutionError } from '../tools/executor.ts';
 import type { Logger } from '../types.ts';
@@ -83,6 +84,9 @@ const macSpeechRunner = new MacSpeechRunner();
 /** Drives the user's Chrome for the browser tool, when Chrome is installed. */
 const chromeBrowser = existsSync('/Applications/Google Chrome.app') ? new ChromeBrowser() : undefined;
 const macSystemControl = process.platform === 'darwin' ? new MacSystemControl() : undefined;
+/** Records per-app screen time locally while the app runs (screen_time tool, break nudges). */
+let usageStore: SqliteStore | undefined;
+let usageSampler: UsageSampler | undefined;
 const changeJournal = new ChangeJournal({ moveToTrash: path => shell.trashItem(path) });
 /** Told to the model on the next request in a session after an undo. */
 const undoNotes = new Map<string, string>();
@@ -101,8 +105,10 @@ let voiceListeningEnabled = false;
 let dictationActive = false;
 /** Speech-recognition model in use; "best" handles Hindi, English, and mixed speech. */
 let speechModel: SpeechModelId = 'fast';
-/** Which assistant answers and speaks: Vyom (male) or Vyomara (female). */
+/** Which assistant answers and speaks: a lead (Vyom, Vyomara) or a specialist. */
 let persona: PersonaId = DEFAULT_PERSONA;
+/** User-written character per assistant (Character panel), woven into the system prompt. */
+let characters: Partial<Record<PersonaId, string>> = {};
 let config: AppConfig | undefined;
 const hasSingleInstanceLock = app.requestSingleInstanceLock();
 
@@ -232,20 +238,37 @@ function personaPath(): string {
   return join(app.getPath('userData'), 'assistant.json');
 }
 
-async function readPersona(): Promise<PersonaId> {
+const MAX_CHARACTER_CHARS = 500;
+
+function sanitizeCharacter(value: unknown): string | undefined {
+  if (typeof value !== 'string') return undefined;
+  const text = value.replace(/[\u0000-\u0008\u000B-\u001F\u007F]/gu, ' ').trim().slice(0, MAX_CHARACTER_CHARS);
+  return text === '' ? undefined : text;
+}
+
+async function readAssistantState(): Promise<{ persona: PersonaId; characters: Partial<Record<PersonaId, string>> }> {
   try {
     const value: unknown = JSON.parse(await readFile(personaPath(), 'utf8'));
-    const id = typeof value === 'object' && value !== null ? (value as { persona?: unknown }).persona : undefined;
-    return isPersonaId(id) ? id : DEFAULT_PERSONA;
+    const record = typeof value === 'object' && value !== null
+      ? (value as { persona?: unknown; characters?: unknown })
+      : {};
+    const stored: Partial<Record<PersonaId, string>> = {};
+    if (typeof record.characters === 'object' && record.characters !== null) {
+      for (const [key, text] of Object.entries(record.characters)) {
+        const clean = sanitizeCharacter(text);
+        if (isPersonaId(key) && clean !== undefined) stored[key] = clean;
+      }
+    }
+    return { persona: isPersonaId(record.persona) ? record.persona : DEFAULT_PERSONA, characters: stored };
   } catch {
-    return DEFAULT_PERSONA;
+    return { persona: DEFAULT_PERSONA, characters: {} };
   }
 }
 
-async function savePersona(id: PersonaId): Promise<void> {
+async function saveAssistantState(): Promise<void> {
   await mkdir(app.getPath('userData'), { recursive: true, mode: 0o700 });
   const temporaryPath = `${personaPath()}.tmp`;
-  await writeFile(temporaryPath, JSON.stringify({ persona: id }), { encoding: 'utf8', mode: 0o600 });
+  await writeFile(temporaryPath, JSON.stringify({ persona, characters }), { encoding: 'utf8', mode: 0o600 });
   await rename(temporaryPath, personaPath());
 }
 
@@ -583,6 +606,7 @@ function desktopToolOptions(
       web: new HttpWebClient(desktopConfig.searxngUrl === undefined ? {} : { searxngUrl: desktopConfig.searxngUrl }),
       ...(chromeBrowser ? { browser: chromeBrowser } : {}),
       ...(macSystemControl ? { system: macSystemControl } : {}),
+      ...(usageStore ? { usage: { usageSince: (day: string) => usageStore!.appUsageSince(day) } } : {}),
       mcp: mcpManager,
       mcpAllowed,
     },
@@ -611,6 +635,7 @@ function warmUpModel(current: AppConfig | undefined): void {
   }).warmUp(AbortSignal.any([controller.signal, AbortSignal.timeout(120_000)]))
     .then(() => controller.signal.aborted ? undefined : primeModel(desktopConfig, createDesktopLogger(), AbortSignal.any([controller.signal, AbortSignal.timeout(180_000)]), {
       persona,
+      ...(characters[persona] === undefined ? {} : { character: characters[persona] }),
       ...desktopToolOptions(
         desktopConfig,
         new FileOperationApprovalManager({ config: desktopConfig, onProposal: refuse, moveToTrash: refuse }),
@@ -817,6 +842,7 @@ ipcMain.handle('vyomara:chat-send', async (_event, input: unknown) => {
         ...(request.planOnly ? { planOnly: true } : {}),
         ...(request.images ? { images: request.images } : {}),
         persona,
+        ...(characters[persona] === undefined ? {} : { character: characters[persona] }),
         onText: text => send('vyomara:chat-text', { requestId: request.requestId, text }),
         onToolActivity: activity => send('vyomara:tool-activity', { requestId: request.requestId, ...activity }),
         onPlan: steps => send('vyomara:plan', { requestId: request.requestId, steps }),
@@ -1059,7 +1085,7 @@ ipcMain.handle('vyomara:speech-model-select', async (_event, input: unknown) => 
   const runner = getLocalWhisperRunner();
   if (voiceListeningEnabled) {
     if (await runner.modelAvailable()) {
-      await whisperServer.start(runner.modelPath, runner.model.language);
+      await whisperServer.start(runner.modelPath, runner.model.language, undefined, await runner.ensureVadModel());
     } else {
       voiceListeningEnabled = false;
       whisperServer.stop();
@@ -1098,7 +1124,8 @@ async function ensureSpeechServer(): Promise<void> {
         : 'Microphone access was not granted. Allow it in the macOS prompt to use voice.',
     );
   }
-  await whisperServer.start(runner.modelPath, runner.model.language);
+  // VAD removes hallucinated words from noise; without it (download failed), voice still works.
+  await whisperServer.start(runner.modelPath, runner.model.language, undefined, await runner.ensureVadModel());
 }
 
 /** Stop the speech server when neither hands-free listening nor dictation needs it. */
@@ -1181,14 +1208,37 @@ ipcMain.handle('vyomara:persona-get', (event) => {
 
 ipcMain.handle('vyomara:persona-set', async (event, input: unknown) => {
   if (event.sender !== mainWindow?.webContents) throw new Error('Assistant request is invalid.');
-  if (!isPersonaId(input)) throw new Error('Choose Vyom or Vyomara.');
+  if (!isPersonaId(input)) throw new Error('Choose one of the Vyomara assistants.');
   if (activeRequest) throw new Error('Wait for the current task to finish before switching assistants.');
   persona = input;
   if (pipWindow && !pipWindow.isDestroyed()) pipWindow.setTitle(personaFor(persona).name);
-  await savePersona(input);
+  await saveAssistantState();
   // The assistant's name is in the system prompt: read the new one ahead of time.
   warmUpModel(config);
   return persona;
+});
+
+ipcMain.handle('vyomara:characters-get', (event) => {
+  if (event.sender !== mainWindow?.webContents) throw new Error('Assistant request is invalid.');
+  return { ...characters };
+});
+
+ipcMain.handle('vyomara:character-set', async (event, input: unknown) => {
+  if (event.sender !== mainWindow?.webContents) throw new Error('Assistant request is invalid.');
+  const record = typeof input === 'object' && input !== null ? (input as { persona?: unknown; character?: unknown }) : {};
+  if (!isPersonaId(record.persona)) throw new Error('Choose one of the Vyomara assistants.');
+  if (record.character !== undefined && typeof record.character !== 'string') throw new Error('The character must be text.');
+  if (typeof record.character === 'string' && record.character.length > MAX_CHARACTER_CHARS) {
+    throw new Error(`Keep the character under ${MAX_CHARACTER_CHARS} characters.`);
+  }
+  if (activeRequest) throw new Error('Wait for the current task to finish before changing a character.');
+  const clean = sanitizeCharacter(record.character);
+  if (clean === undefined) delete characters[record.persona];
+  else characters[record.persona] = clean;
+  await saveAssistantState();
+  // The character is in the system prompt: re-read it ahead of time.
+  if (record.persona === persona) warmUpModel(config);
+  return { ...characters };
 });
 
 app.whenReady().then(async () => {
@@ -1231,7 +1281,27 @@ app.whenReady().then(async () => {
     // Restores the chosen speech model. Listening itself never resumes on launch:
     // an open conversation hears everything, so it starts only when the user presses the orb.
     await readVoiceListeningPreference();
-    persona = await readPersona();
+    const assistantState = await readAssistantState();
+    persona = assistantState.persona;
+    characters = assistantState.characters;
+    // Screen time stays on this Mac: sampled only while the app runs, written to the local database.
+    try {
+      const store = new SqliteStore(config.dataDirectory);
+      usageStore = store;
+      usageSampler = new UsageSampler({
+        record: sample => store.addAppUsage(sample.day, sample.app, sample.seconds),
+        nudge: seconds => {
+          const hours = (seconds / 3600).toFixed(1).replace(/\.0$/, '');
+          new Notification({
+            title: 'Thoda break ho jaye?',
+            body: `Aap ${hours} ghante se lagatar screen par hain. Paanch minute ki break le lijiye.`,
+          }).show();
+        },
+      });
+      usageSampler.start();
+    } catch {
+      console.error(JSON.stringify({ event: 'usage.sampler-start-failed' }));
+    }
     approvalMemory = new ApprovalMemory({
       grants: await readStandingGrants(),
       onGrantsChanged: grants => {
@@ -1296,6 +1366,8 @@ app.on('before-quit', () => {
   macSpeechRunner.stop();
   whisperServer.stop();
   void localWhisperRunner?.stop();
+  usageSampler?.stop();
+  try { usageStore?.close(); } catch { /* already closed */ }
 });
 
 app.on('window-all-closed', () => {

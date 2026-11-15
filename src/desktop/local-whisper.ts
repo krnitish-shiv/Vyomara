@@ -73,6 +73,18 @@ function modelUrl(model: SpeechModelInfo): string {
   return `https://huggingface.co/ggerganov/whisper.cpp/resolve/main/${model.file}`;
 }
 
+/**
+ * Silero voice-activity model: whisper then transcribes only the stretches
+ * with actual speech, which removes hallucinated words from breaths,
+ * keyboard noise, and background sound. Small (~1 MB), fetched silently.
+ */
+export const VAD_MODEL = {
+  file: 'ggml-silero-v5.1.2.bin',
+  sha1: 'a372f48dcf0bd9e4330eef2802bc46e061c19634',
+  maxBytes: 5 * 1024 * 1024,
+  url: 'https://huggingface.co/ggml-org/whisper-vad/resolve/main/ggml-silero-v5.1.2.bin',
+} as const;
+
 /** Verified model files (path → size:mtime), so large models are hashed once per change. */
 const verifiedModels = new Map<string, string>();
 const defaultWhisperBinaries = ['/opt/homebrew/bin/whisper-stream', '/usr/local/bin/whisper-stream'];
@@ -141,6 +153,51 @@ export class LocalWhisperRunner {
     } catch (error) {
       if (error instanceof Error && 'code' in error && error.code === 'ENOENT') return false;
       throw error;
+    }
+  }
+
+  /**
+   * The silero VAD model's path, downloading and verifying it first when
+   * needed. Returns undefined when it cannot be fetched: transcription then
+   * runs without VAD, as before.
+   */
+  async ensureVadModel(): Promise<string | undefined> {
+    const path = join(this.#modelDirectory, VAD_MODEL.file);
+    try {
+      const metadata = await stat(path);
+      if (metadata.isFile() && metadata.size > 0 && metadata.size <= VAD_MODEL.maxBytes && await fileSha1(path) === VAD_MODEL.sha1) {
+        return path;
+      }
+    } catch {
+      // Not downloaded yet.
+    }
+    const temporaryPath = `${path}.download`;
+    try {
+      await mkdir(this.#modelDirectory, { recursive: true, mode: 0o700 });
+      const response = await fetch(VAD_MODEL.url, { redirect: 'follow', signal: AbortSignal.timeout(60_000) });
+      if (!response.ok || !response.body) return undefined;
+      const declaredLength = Number(response.headers.get('content-length'));
+      if (Number.isFinite(declaredLength) && declaredLength > VAD_MODEL.maxBytes) return undefined;
+      let received = 0;
+      const hash = createHash('sha1');
+      const meter = new Transform({
+        transform(chunk: Buffer, _encoding, callback) {
+          received += chunk.length;
+          if (received > VAD_MODEL.maxBytes) {
+            callback(new LocalSpeechError('The VAD model download exceeded its size limit.'));
+            return;
+          }
+          hash.update(chunk);
+          callback(null, chunk);
+        },
+      });
+      await pipeline(response.body, meter, createWriteStream(temporaryPath, { flags: 'w', mode: 0o600 }));
+      if (hash.digest('hex') !== VAD_MODEL.sha1) throw new LocalSpeechError('The downloaded VAD model failed its integrity check.');
+      await rename(temporaryPath, path);
+      return path;
+    } catch {
+      await rm(temporaryPath, { force: true });
+      return undefined;
     }
   }
 
