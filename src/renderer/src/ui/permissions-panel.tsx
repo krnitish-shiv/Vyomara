@@ -28,6 +28,8 @@ export function PermissionsPanel({
 }) {
   const [state, setState] = useState<DesktopPermissions>();
   const [error, setError] = useState<string>();
+  const [pattern, setPattern] = useState('');
+  const [folder, setFolder] = useState('');
 
   useEffect(() => {
     headingRef.current?.focus();
@@ -91,6 +93,19 @@ export function PermissionsPanel({
             </ul>
           </>
         )}
+        <p className="history-review-title">Allow a command</p>
+        <form
+          className="permission-command-form"
+          onSubmit={event => {
+            event.preventDefault();
+            void change(() => window.vyomara.grantPermission(`command:${folder.trim()}\t${pattern.trim()}`)).then(() => setPattern(''));
+          }}
+        >
+          <input value={pattern} onChange={event => setPattern(event.target.value)} placeholder="pnpm test*" aria-label="Command, or a prefix ending in *" maxLength={300} />
+          <input value={folder} onChange={event => setFolder(event.target.value)} placeholder="/Users/you/Projects/app" aria-label="Project folder (absolute path)" maxLength={4000} />
+          <button className="history-action" type="submit" disabled={!pattern.trim() || !folder.trim().startsWith('/')}>Allow</button>
+          <small>End with * to allow anything that starts the same way, like <code>pnpm test*</code>. Chained commands (&amp;&amp;, ;, |) always ask.</small>
+        </form>
         {error && <p className="history-message history-error" role="alert">{error}</p>}
       </div>
       <p className="history-privacy">

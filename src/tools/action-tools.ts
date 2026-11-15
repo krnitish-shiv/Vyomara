@@ -3,6 +3,8 @@ import { isAbsolute } from 'node:path';
 import type { AppConfig } from '../config/config.ts';
 import { ToolFailure, type Tool, type ToolRegistry } from './contracts.ts';
 import { resolveSafeFilesystemPath } from './filesystem-tools.ts';
+import type { McpPort } from './mcp-client.ts';
+import type { SystemControlPort } from './system-tool.ts';
 
 /** An action that changes something outside Vyomara and therefore needs the user's approval. */
 export type ActionProposal =
@@ -21,6 +23,19 @@ export type ActionProposal =
     readonly operation: 'fetch' | 'search';
     readonly target: string;
     readonly host: string;
+  }
+  | {
+    /** A tool on an MCP server the user configured; arguments as JSON text. */
+    readonly kind: 'mcp';
+    readonly server: string;
+    readonly tool: string;
+    readonly arguments: string;
+  }
+  | {
+    /** The Mac itself (volume, dark mode, lock, clipboard, keystrokes, …); `detail` says exactly what happens. */
+    readonly kind: 'system';
+    readonly action: string;
+    readonly detail: string;
   };
 
 /**
@@ -39,7 +54,25 @@ export interface ActionApprovalPort {
 export type StandingGrant =
   | { readonly kind: 'app'; readonly application: string }
   | { readonly kind: 'browser'; readonly browser: string }
-  | { readonly kind: 'host'; readonly host: string };
+  | { readonly kind: 'host'; readonly host: string }
+  /** Run commands matching `pattern` (exact, or a prefix ending in *) in `folder` and its subfolders. */
+  | { readonly kind: 'command'; readonly folder: string; readonly pattern: string };
+
+/** Shell syntax that chains or redirects commands: never covered by a * pattern. */
+const CHAINING = /[;&|`<>\n\\]|\$\(/u;
+
+/** "pnpm test*" matches "pnpm test" and "pnpm test --watch", but never "pnpm test && rm -rf ~". */
+export function commandMatches(pattern: string, command: string): boolean {
+  const trimmed = command.trim();
+  if (!pattern.endsWith('*')) return trimmed === pattern.trim();
+  const prefix = pattern.slice(0, -1).trimEnd();
+  return prefix !== '' && trimmed.startsWith(prefix) && !CHAINING.test(trimmed) && (trimmed.length === prefix.length || trimmed[prefix.length] === ' ' || prefix.endsWith(' '));
+}
+
+function folderContains(folder: string, cwd: string): boolean {
+  const base = folder.replace(/\/+$/u, '');
+  return cwd === base || cwd.startsWith(`${base}/`);
+}
 
 /** The default browser in browser grants. */
 export const DEFAULT_BROWSER = 'default browser';
@@ -48,6 +81,7 @@ export function grantId(grant: StandingGrant): string {
   switch (grant.kind) {
     case 'app': return `app:${grant.application}`;
     case 'browser': return `browser:${grant.browser}`;
+    case 'command': return `command:${grant.folder}\t${grant.pattern.trim()}`;
     default: return `host:${grant.host.toLowerCase()}`;
   }
 }
@@ -56,10 +90,18 @@ export function parseGrantId(id: string): StandingGrant | undefined {
   const separator = id.indexOf(':');
   const kind = id.slice(0, separator);
   const value = id.slice(separator + 1).trim();
-  if (separator < 1 || value === '' || value.length > 253) return undefined;
+  if (separator < 1 || value === '' || value.length > (kind === 'command' ? 4_400 : 253)) return undefined;
   if (kind === 'app' && APPLICATION_NAME.test(value)) return { kind: 'app', application: value };
   if (kind === 'browser' && (value === DEFAULT_BROWSER || APPLICATION_NAME.test(value))) return { kind: 'browser', browser: value };
   if (kind === 'host' && /^[a-z0-9.-]+$/u.test(value)) return { kind: 'host', host: value };
+  if (kind === 'command') {
+    const tab = value.indexOf('\t');
+    const folder = value.slice(0, tab);
+    const pattern = value.slice(tab + 1).trim();
+    if (tab > 0 && folder.startsWith('/') && !/[\n\t]/u.test(folder) && pattern !== '' && pattern.length <= 300 && !/[\n\t]/u.test(pattern) && pattern !== '*') {
+      return { kind: 'command', folder, pattern };
+    }
+  }
   return undefined;
 }
 
@@ -94,11 +136,18 @@ export class ApprovalMemory {
   }
 
   has(command: string, cwd: string): boolean {
-    return this.#commands.has(ApprovalMemory.key(command, cwd));
+    if (this.#commands.has(ApprovalMemory.key(command, cwd))) return true;
+    for (const id of this.#grants) {
+      const grant = parseGrantId(id);
+      if (grant?.kind === 'command' && folderContains(grant.folder, cwd) && commandMatches(grant.pattern, command)) return true;
+    }
+    return false;
   }
 
+  /** "Always allow here": this exact command in this folder, kept across restarts until revoked. */
   allow(command: string, cwd: string): void {
     this.#commands.add(ApprovalMemory.key(command, cwd));
+    this.grant({ kind: 'command', folder: cwd, pattern: command.trim().replace(/\*$/u, '') });
   }
 
   hasGrant(grant: StandingGrant): boolean {
@@ -153,6 +202,30 @@ export interface CommandRunnerPort {
   run(command: string, cwd: string, timeoutMs: number, signal: AbortSignal): Promise<CommandResult>;
 }
 
+/** A command left running in the background (dev server, watcher). */
+export interface BackgroundCommand {
+  readonly id: string;
+  readonly command: string;
+  readonly cwd: string;
+  readonly status: 'running' | 'exited' | 'stopped';
+  readonly exitCode?: number | null;
+  readonly runningForSeconds: number;
+  /** New output since the last read. */
+  readonly output?: string;
+}
+
+export interface BackgroundCommandPort {
+  start(command: string, cwd: string): BackgroundCommand;
+  read(id: string, all?: boolean): BackgroundCommand;
+  stop(id: string): BackgroundCommand;
+  list(): BackgroundCommand[];
+}
+
+function isBackgroundPort(runner: unknown): runner is BackgroundCommandPort {
+  return typeof runner === 'object' && runner !== null && typeof (runner as BackgroundCommandPort).start === 'function'
+    && typeof (runner as BackgroundCommandPort).read === 'function';
+}
+
 /** Window-level control of a running app. */
 export type AppControlAction = 'focus' | 'hide' | 'minimize' | 'restore' | 'maximize' | 'fullscreen' | 'quit' | 'scroll-down' | 'scroll-up' | 'read-page';
 /** Actions control_application accepts ("read-page" is only asked for by the browser tool). */
@@ -174,8 +247,14 @@ export interface ActionToolPorts {
   readonly launcher?: LauncherPort;
   /** Enables fetch_url (and web_search when a search backend is configured). */
   readonly web?: WebClientPort;
-  /** Enables browser: driving the user's own Chrome (search, open, read, click, scroll). */
+  /** Enables browser: driving the user's own Chrome (search, open, read, click, type, tabs). */
   readonly browser?: BrowserPort;
+  /** Enables mac_control: volume, dark mode, lock, clipboard, keystrokes, settings panes, Wi-Fi. */
+  readonly system?: SystemControlPort;
+  /** Tools from the user's MCP servers (mcp.json); each call is approved. */
+  readonly mcp?: McpPort;
+  /** MCP tools the user chose "Always allow" for, until the app quits. */
+  readonly mcpAllowed?: Set<string>;
 }
 
 export type BrowserAction =
@@ -184,7 +263,14 @@ export type BrowserAction =
   | { readonly kind: 'read' }
   | { readonly kind: 'click'; readonly link: number }
   | { readonly kind: 'scroll'; readonly direction: 'down' | 'up' }
-  | { readonly kind: 'back' };
+  | { readonly kind: 'back' }
+  /** Type into the numbered input from the last read (search boxes, forms); submit presses Enter / submits the form. */
+  | { readonly kind: 'type'; readonly field: number; readonly text: string; readonly submit: boolean }
+  /** Find text on the page: scrolls to it and returns the surrounding snippets. */
+  | { readonly kind: 'find'; readonly text: string }
+  | { readonly kind: 'tabs' }
+  | { readonly kind: 'switch'; readonly tab: number }
+  | { readonly kind: 'close' };
 
 /** What the live tab shows after an action. */
 export interface BrowserPage {
@@ -192,6 +278,12 @@ export interface BrowserPage {
   readonly title: string;
   readonly text: string;
   readonly links: readonly { readonly n: number; readonly text: string; readonly url: string }[];
+  /** Visible inputs, numbered for `type`. */
+  readonly inputs?: readonly { readonly n: number; readonly type: string; readonly label: string }[];
+  /** The front window's tabs, after `tabs`, `switch`, or `close`. */
+  readonly tabs?: readonly { readonly n: number; readonly title: string; readonly url: string; readonly active: boolean }[];
+  /** After `find`. */
+  readonly found?: { readonly matched: boolean; readonly snippets: readonly string[] };
   /** Google result list, when the page is a Google search. */
   readonly results?: readonly { readonly title: string; readonly url: string; readonly snippet: string }[];
   readonly captcha?: boolean;
@@ -211,14 +303,27 @@ interface BrowserInput {
   readonly link?: number;
   readonly direction?: 'down' | 'up';
   readonly offset?: number;
+  readonly field?: number;
+  readonly text?: string;
+  readonly submit?: boolean;
+  readonly tab?: number;
 }
+
+const BROWSER_ACTIONS = ['search', 'open', 'read', 'click', 'scroll', 'back', 'type', 'find', 'tabs', 'switch', 'close'];
+const BROWSER_KEYS = ['action', 'query', 'url', 'link', 'direction', 'offset', 'field', 'text', 'submit', 'tab'];
 
 function browserInputError(value: unknown): string | undefined {
   if (!isRecord(value)) return 'Arguments must be a JSON object.';
-  const actions = ['search', 'open', 'read', 'click', 'scroll', 'back'];
-  if (typeof value.action !== 'string' || !actions.includes(value.action)) return `action must be one of: ${actions.join(', ')}.`;
-  if (Object.keys(value).some(key => !['action', 'query', 'url', 'link', 'direction', 'offset'].includes(key))) return 'Use only action, query, url, link, direction, offset.';
+  if (typeof value.action !== 'string' || !BROWSER_ACTIONS.includes(value.action)) return `action must be one of: ${BROWSER_ACTIONS.join(', ')}.`;
+  if (Object.keys(value).some(key => !BROWSER_KEYS.includes(key))) return `Use only ${BROWSER_KEYS.join(', ')}.`;
   if (value.action === 'search' && (typeof value.query !== 'string' || value.query.trim() === '' || value.query.length > 400)) return 'search needs query (the search words).';
+  if (value.action === 'type') {
+    if (!Number.isInteger(value.field) || (value.field as number) < 1 || (value.field as number) > 200) return 'type needs field: an input number from the last read.';
+    if (typeof value.text !== 'string' || value.text.length > 2_000) return 'type needs text (at most 2000 characters).';
+    if (value.submit !== undefined && typeof value.submit !== 'boolean') return 'submit must be true or false.';
+  }
+  if (value.action === 'find' && (typeof value.text !== 'string' || value.text.trim() === '' || value.text.length > 200)) return 'find needs text (the words to look for on the page).';
+  if (value.action === 'switch' && (!Number.isInteger(value.tab) || (value.tab as number) < 1 || (value.tab as number) > 200)) return 'switch needs tab: a tab number from tabs.';
   if (value.action === 'open') {
     if (typeof value.url !== 'string') return 'open needs url.';
     try {
@@ -338,6 +443,7 @@ interface CommandInput {
   readonly command: string;
   readonly cwd: string;
   readonly timeout_seconds?: number;
+  readonly background?: boolean;
 }
 
 interface CommandOutput {
@@ -380,8 +486,9 @@ interface UrlOutput {
 
 function commandError(value: unknown, maxTimeoutSeconds: number): string | undefined {
   if (!isRecord(value)) return 'Arguments must be a JSON object.';
-  const keys = onlyKeys(value, ['command', 'cwd', 'timeout_seconds']);
+  const keys = onlyKeys(value, ['command', 'cwd', 'timeout_seconds', 'background']);
   if (keys) return keys;
+  if (value.background !== undefined && typeof value.background !== 'boolean') return 'background must be true or false.';
   if (typeof value.command !== 'string' || value.command.trim() === '') return 'command must be a non-empty shell command.';
   if (value.command.length > 8_000 || value.command.includes('\0')) return 'command is too long or contains invalid characters.';
   if (typeof value.cwd !== 'string' || !isAbsolute(value.cwd)) return 'cwd must be the absolute directory to run the command in (usually the project root).';
@@ -449,13 +556,14 @@ export function registerActionTools(
     const runCommand: Tool<CommandInput, CommandOutput> = {
       id: 'run_command',
       effect: 'shell',
-      description: `Run a shell command (zsh) in a directory after the user approves it, e.g. tests, builds, git, package managers. Output (stdout+stderr) and exit code are returned. Commands must not wait for input. Default timeout ${Math.min(120, maxTimeoutSeconds)}s.`,
+      description: `Run a shell command (zsh) in a directory after the user approves it, e.g. tests, builds, git, package managers. Output (stdout+stderr) and exit code are returned. Commands must not wait for input. Default timeout ${Math.min(120, maxTimeoutSeconds)}s.${isBackgroundPort(commandRunner) ? ' For servers and watchers that keep running (pnpm dev, npm start, a watch mode), set background=true: it returns an id and the first output, keeps running after this request, and command_output reads or stops it.' : ''}`,
       parameters: {
         type: 'object',
         properties: {
           command: { type: 'string', description: 'The exact shell command, e.g. "pnpm test" or "git status".', maxLength: 8_000 },
           cwd: { type: 'string', description: 'Absolute working directory, usually the project root.', maxLength: 4_096 },
           timeout_seconds: { type: 'integer', description: 'Optional timeout in seconds.', minimum: 1, maximum: maxTimeoutSeconds },
+          ...(isBackgroundPort(commandRunner) ? { background: { type: 'boolean' as const, description: 'Optional: keep it running in the background (servers, watchers).' } } : {}),
         },
         required: ['command', 'cwd'],
         additionalProperties: false,
@@ -475,6 +583,28 @@ export function registerActionTools(
         );
         if (!decision) return { status: 'rejected', command: input.command, cwd };
         if (decision === 'always') approvalMemory?.allow(input.command, cwd);
+        if (input.background === true && isBackgroundPort(commandRunner)) {
+          const started = commandRunner.start(input.command, cwd);
+          // A moment for servers to print their address or first error.
+          for (let waited = 0; waited < 8_000 && !signal.aborted; waited += 500) {
+            await new Promise(resolve => setTimeout(resolve, 500));
+            if (commandRunner.read(started.id, true).status !== 'running') break;
+            if (waited >= 3_000 && /localhost:\d+|127\.0\.0\.1:\d+|ready|listening|compiled|error/iu.test(commandRunner.read(started.id, true).output ?? '')) break;
+          }
+          const now = commandRunner.read(started.id);
+          return {
+            status: 'completed',
+            command: input.command,
+            cwd,
+            approval: remembered ? 'remembered' : 'user',
+            background: true,
+            id: now.id,
+            state: now.status,
+            ...(now.exitCode === undefined ? {} : { exitCode: now.exitCode }),
+            output: now.output ?? '',
+            note: now.status === 'running' ? `Running in the background as ${now.id}. Read new output or stop it with command_output.` : 'It already exited; see output.',
+          };
+        }
         const result = await commandRunner.run(input.command, cwd, timeoutSeconds * 1_000, signal);
         return {
           status: 'completed',
@@ -490,6 +620,35 @@ export function registerActionTools(
       },
     };
     registry.register(runCommand);
+
+    if (isBackgroundPort(commandRunner)) {
+      const background = commandRunner;
+      const outputTool: Tool<{ id?: string; action?: string }, Record<string, unknown>> = {
+        id: 'command_output',
+        effect: 'read',
+        description: 'Manage commands started with run_command background=true: "read" (default) returns the new output since the last read and whether it is still running, "stop" stops it, "list" shows all of them.',
+        parameters: {
+          type: 'object',
+          properties: {
+            id: { type: 'string', description: 'The id returned by run_command (not needed for "list").', maxLength: 20 },
+            action: { type: 'string', description: '"read" (default), "stop", or "list".', maxLength: 5 },
+          },
+          additionalProperties: false,
+        },
+        normalizeInput: dropNulls,
+        validateInput: (value): value is { id?: string; action?: string } => isRecord(value)
+          && (value.action === undefined || value.action === 'read' || value.action === 'stop' || value.action === 'list')
+          && (value.action === 'list' || typeof value.id === 'string'),
+        inputError: value => (isRecord(value) && (value.action === 'list' || typeof value.id === 'string') ? 'action must be read, stop, or list.' : 'id is required (from run_command), unless action is "list".'),
+        validateOutput: (value): value is Record<string, unknown> => isRecord(value),
+        async run(input) {
+          if (input.action === 'list') return { commands: background.list() };
+          const id = input.id as string;
+          return input.action === 'stop' ? { ...background.stop(id) } : { ...background.read(id) };
+        },
+      };
+      registry.register(outputTool);
+    }
   }
 
   if (launcher) {
@@ -583,7 +742,7 @@ export function registerActionTools(
     const openUrl: Tool<UrlInput, UrlOutput> = {
       id: 'open_url',
       effect: 'network',
-      description: 'Show a web page to the USER in their browser (after approval), e.g. "open YouTube", "Chrome mein … search karo". You cannot see the page afterwards. To read a page yourself and answer from it, use fetch_url instead. For a search the user wants to see, use https://www.google.com/search?q=<url-encoded query>. Optional browser, e.g. "Google Chrome" or "Safari".',
+      description: 'Show a web page to the USER in their browser (after approval) when they only want it opened, e.g. "open YouTube", "github.com kholo". You cannot see the page afterwards, so never use it when the user expects an answer: to search or read in Chrome and answer from it use browser; to read a page in the background use fetch_url. Optional browser, e.g. "Google Chrome" or "Safari".',
       parameters: {
         type: 'object',
         properties: {
@@ -623,14 +782,18 @@ export function registerActionTools(
     const browserTool: Tool<BrowserInput, Record<string, unknown>> = {
       id: 'browser',
       effect: 'network',
-      description: 'Use the user\'s Google Chrome like a person, visibly (after approval): "search" Google and read the results, "open" any site, "read" the page in the front tab (what the user is looking at, including pages they are signed in to), "click" a link by its number from the last read, "scroll" down/up, "back". Returns the page title, URL, text (long pages: read again with offset = nextOffset), and numbered links. Use it to browse for anything: research, prices, docs, comparisons, following links across pages. If a page asks for a CAPTCHA or sign-in, stop and tell the user; never try to get around it.',
+      description: 'Use the user\'s Google Chrome like a person, visibly (after approval): "search" Google and read the results, "open" any site, "read" the front tab (what the user is looking at, including pages they are signed in to), "click" a link by its number from the last read, "type" text into a numbered input from the last read (search boxes, forms; submit=true presses Enter), "find" text on the page, "scroll" down/up, "back", "tabs" (list the window\'s tabs), "switch" to a tab, "close" the tab. Returns the page title, URL, text (long pages: read again with offset = nextOffset), numbered links, and numbered inputs. Use it to browse for anything: research, prices, docs, comparisons, following links across pages, searching inside a site. If a page asks for a CAPTCHA or sign-in, stop and tell the user; never try to get around it.',
       parameters: {
         type: 'object',
         properties: {
-          action: { type: 'string', description: 'search, open, read, click, scroll, or back.', maxLength: 8 },
+          action: { type: 'string', description: 'search, open, read, click, type, find, scroll, back, tabs, switch, or close.', maxLength: 8 },
           query: { type: 'string', description: 'For search: the search words.', maxLength: 400 },
           url: { type: 'string', description: 'For open: full http(s) address.', maxLength: 4_096 },
           link: { type: 'integer', description: 'For click: link number from the last read.', minimum: 1, maximum: 200 },
+          field: { type: 'integer', description: 'For type: input number from the last read.', minimum: 1, maximum: 200 },
+          text: { type: 'string', description: 'For type: the text to enter; for find: the words to look for.', maxLength: 2_000 },
+          submit: { type: 'boolean', description: 'For type: press Enter / submit the form afterwards.' },
+          tab: { type: 'integer', description: 'For switch: tab number from tabs.', minimum: 1, maximum: 200 },
           direction: { type: 'string', description: 'For scroll: "down" (default) or "up".', maxLength: 4 },
           offset: { type: 'integer', description: 'For read: character offset from a previous truncated result.', minimum: 0 },
         },
@@ -642,15 +805,7 @@ export function registerActionTools(
       inputError: browserInputError,
       validateOutput: (value): value is Record<string, unknown> => isRecord(value) && typeof value.status === 'string',
       async run(input, signal) {
-        const action: BrowserAction = input.action === 'search'
-          ? { kind: 'search', query: (input.query ?? '').trim() }
-          : input.action === 'open'
-            ? { kind: 'open', url: new URL(input.url ?? '').href }
-            : input.action === 'click'
-              ? { kind: 'click', link: input.link ?? 1 }
-              : input.action === 'scroll'
-                ? { kind: 'scroll', direction: input.direction ?? 'down' }
-                : { kind: input.action === 'back' ? 'back' : 'read' };
+        const action = browserActionFor(input);
         // One "always allow" for Chrome covers browsing; otherwise each navigation asks.
         const remembered = approvalMemory?.hasGrant(browserGrant) === true;
         if (!remembered) {
@@ -678,6 +833,9 @@ export function registerActionTools(
           totalChars: page.text.length,
           ...(nextOffset < page.text.length ? { truncated: true, nextOffset } : {}),
           ...(offset === 0 ? { links: page.links.slice(0, 60) } : {}),
+          ...(offset === 0 && page.inputs && page.inputs.length > 0 ? { inputs: page.inputs.slice(0, 40) } : {}),
+          ...(page.tabs ? { tabs: page.tabs.slice(0, 60) } : {}),
+          ...(page.found ? { found: page.found } : {}),
           ...(page.height !== undefined && page.scroll !== undefined && page.viewport !== undefined
             ? { scrolledTo: `${Math.round(((page.scroll + page.viewport) / Math.max(page.height, 1)) * 100)}% of the page` }
             : {}),
@@ -685,6 +843,22 @@ export function registerActionTools(
       },
     };
     registry.register(browserTool);
+  }
+}
+
+function browserActionFor(input: BrowserInput): BrowserAction {
+  switch (input.action) {
+    case 'search': return { kind: 'search', query: (input.query ?? '').trim() };
+    case 'open': return { kind: 'open', url: new URL(input.url ?? '').href };
+    case 'click': return { kind: 'click', link: input.link ?? 1 };
+    case 'scroll': return { kind: 'scroll', direction: input.direction ?? 'down' };
+    case 'type': return { kind: 'type', field: input.field ?? 1, text: input.text ?? '', submit: input.submit === true };
+    case 'find': return { kind: 'find', text: (input.text ?? '').trim() };
+    case 'switch': return { kind: 'switch', tab: input.tab ?? 1 };
+    case 'tabs': return { kind: 'tabs' };
+    case 'close': return { kind: 'close' };
+    case 'back': return { kind: 'back' };
+    default: return { kind: 'read' };
   }
 }
 
@@ -838,7 +1012,7 @@ export function registerWebTools(
     effect: 'network',
     description: builtIn
       ? 'Search the web (after the user approves): returns titles, URLs, and snippets from Wikipedia (facts, people, places, topics) and Google News (current events). Then use fetch_url to read the most relevant pages before answering, and cite the URLs you used.'
-      : 'Search the web (after the user approves) and return result titles, URLs, and snippets. Then use fetch_url to read the most relevant pages before answering, and cite the URLs you used.',
+      : 'Search the web (after the user approves) and return result titles, URLs, and snippets, like a search engine. Use it for anything you do not know or that may have changed: docs, versions, prices, how-tos, people, places, news. Then use fetch_url to read the 1–3 most relevant pages before answering, and cite the URLs you used.',
     parameters: {
       type: 'object',
       properties: { query: { type: 'string', description: 'Search words.', maxLength: 400 } },
@@ -853,11 +1027,39 @@ export function registerWebTools(
       const query = input.query.trim();
       const host = searchHost ?? BUILT_IN_SEARCH_HOSTS;
       if (!await approve('search', query, host, signal)) return { status: 'rejected', query };
-      const results = builtIn && fetchRaw ? await builtInSearch(query, fetchRaw, signal) : await web.search(query, signal);
-      return { status: 'searched', query, results: results.slice(0, 10) };
+      if (builtIn && fetchRaw) {
+        return { status: 'searched', query, results: (await builtInSearch(query, fetchRaw, signal)).slice(0, 10) };
+      }
+      try {
+        return { status: 'searched', query, results: (await web.search(query, signal)).slice(0, 10) };
+      } catch (error) {
+        // The search engine may be unreachable or ask for a bot check; facts and news
+        // still come from Wikipedia and Google News, with their own approval.
+        if (!fetchRaw || !(error instanceof ToolFailure)) throw error;
+        if (!await approve('search', query, BUILT_IN_SEARCH_HOSTS, signal)) throw error;
+        const results = await builtInSearch(query, fetchRaw, signal);
+        return {
+          status: 'searched',
+          query,
+          results: results.slice(0, 10),
+          note: `${host} was unavailable (${error.message}) so these results come from ${BUILT_IN_SEARCH_HOSTS}.`,
+        };
+      }
     },
   };
   registry.register(webSearch);
+}
+
+/**
+ * Words about recency or question phrasing ("latest", "version", "kya hai")
+ * make Wikipedia's full-text search match the wrong articles; the subject
+ * alone ("react native") finds its article. News search keeps the full query.
+ */
+const SEARCH_FILLER = /\b(?:what|which|who|when|where|is|are|was|the|a|an|of|for|in|on|about|tell|me|please|current|currently|latest|newest|new|recent|version|versions|release|released|today|now|available|right|kya|hai|hain|ka|ki|ke|batao|bataiye|abhi|aaj|20\d\d)\b/giu;
+
+export function encyclopediaQuery(query: string): string {
+  const subject = query.replace(SEARCH_FILLER, ' ').replace(/[?!.,]+/gu, ' ').replace(/\s+/gu, ' ').trim();
+  return subject === '' ? query : subject;
 }
 
 /** The approval label for the built-in search, which asks two public sources. */
@@ -873,12 +1075,15 @@ export async function builtInSearch(
   fetchRaw: (url: string, signal: AbortSignal) => Promise<string>,
   signal: AbortSignal,
 ): Promise<WebSearchResult[]> {
-  const wiki = `https://en.wikipedia.org/w/api.php?action=query&list=search&format=json&utf8=1&srlimit=5&srsearch=${encodeURIComponent(query)}`;
+  const wikiUrl = (words: string): string => `https://en.wikipedia.org/w/api.php?action=query&list=search&format=json&utf8=1&srlimit=5&srsearch=${encodeURIComponent(words)}`;
   const news = `https://news.google.com/rss/search?q=${encodeURIComponent(query)}&hl=en-IN&gl=IN&ceid=IN:en`;
-  const [wikiText, newsText] = await Promise.all([
-    fetchRaw(wiki, signal).catch(() => ''),
+  const subject = encyclopediaQuery(query);
+  let [wikiText, newsText] = await Promise.all([
+    fetchRaw(wikiUrl(subject), signal).catch(() => ''),
     fetchRaw(news, signal).catch(() => ''),
   ]);
+  // A misspelt leftover word ("availble") can empty the subject search: try the whole query instead.
+  if (subject !== query && !/"title"/u.test(wikiText)) wikiText = await fetchRaw(wikiUrl(query), signal).catch(() => wikiText);
   const wikiResults: WebSearchResult[] = [];
   try {
     const payload = JSON.parse(wikiText) as { query?: { search?: { title?: unknown; snippet?: unknown }[] } };

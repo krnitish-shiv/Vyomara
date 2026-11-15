@@ -37,7 +37,7 @@ export function registerMemoryTool(registry: ToolRegistry, store: MemoryStore): 
   const tool: Tool<RememberInput, RememberOutput> = {
     id: 'remember',
     effect: 'read',
-    description: 'Save one short, lasting fact for future conversations. Write it in English, in the third person, so it reads correctly later: "The user\'s main project is KeylessRN.", "The user runs tests with pnpm check.", "Reply to the user in Hinglish." Use when the user asks you to remember something ("yaad rakhna") or states a lasting preference. Save each fact separately. Never save secrets, passwords, keys, or one-off details. Pass project_path (the project root) when the fact is about one project.',
+    description: 'Save one short, lasting fact for future conversations. Write it in English, in the third person, so it reads correctly later: "The user\'s main project is KeylessRN.", "The user runs tests with pnpm check.", "Reply to the user in Hinglish." Use only when the user asks you to remember something ("yaad rakhna") or states a lasting preference; a task to do now is not a memory. Save each fact separately. Never save secrets, passwords, keys, or one-off details. Pass project_path (the project root) when the fact is about one project.',
     parameters: {
       type: 'object',
       properties: {
@@ -59,7 +59,7 @@ export function registerMemoryTool(registry: ToolRegistry, store: MemoryStore): 
           remembered: entry.text,
           ...(entry.project ? { project: entry.project } : {}),
           duplicate,
-          note: 'Saved. Tell the user briefly, in their language, what you will remember.',
+          note: 'Saved. Tell the user briefly, in their language, what you will remember, and carry on with anything else they asked for.',
         };
       } catch (error) {
         throw new ToolFailure(error instanceof Error ? error.message : 'The memory could not be saved.', 'tool-failed');

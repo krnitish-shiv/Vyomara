@@ -54,6 +54,9 @@ your Mac.**
 | *"aaj ki top news kya hai?"* | Reads current headlines and answers in the chat, with real links. |
 | *"react.dev/blog padh ke batao latest post kya hai"* | Reads the page itself and answers with a link. |
 | *"VS Code full screen karo"* | Focuses, hides, minimizes, maximizes, or quits apps. Quitting always asks. |
+| *"react native ka latest version kya hai?"* | Asks the npm registry directly and answers with the version and release date. |
+| *"Patna ka mausam kaisa hai?"* / *"100 dollar kitne rupaye?"* | Live weather and forecast; today's exchange rate. |
+| *"abhi London mein kitne baje hain?"* / *"18% of 2499?"* | Exact time anywhere, exact maths, unit and date conversions, and this Mac's battery and disk. |
 | *"undo karo"* | Puts back the last request's approved file changes. |
 | *"yaad rakhna: mera main project KeylessRN hai"* | Remembers it for future conversations (see **Memories**). |
 
@@ -69,6 +72,10 @@ your Mac.**
 - 🧾 **Diffs in VS Code:** proposed edits open side by side in VS Code. One click approves all edits in a task.
 - ↶ **Undo:** undo any request's approved file changes.
 - 📘 **Project rules:** follows your project's `AGENTS.md`, `CLAUDE.md`, `.github/copilot-instructions.md`, or `.cursorrules`.
+- 🧰 **Developer tools:** read-only git, approved commits, one-diff multi-file edits, a Problems list from your typecheck/lint, background dev servers, and a read-only `explore` helper.
+- 🗺️ **Plan first:** see the plan before anything changes, then press **Go ahead**.
+- 🖼️ **Pictures:** paste a screenshot of an error for a vision model to read.
+- 🔌 **MCP servers:** add GitHub, databases, and other tools via `mcp.json` (every call is approved).
 - ✅ **Verified actions:** every reply ends with a list built only from real tool results, so the assistant never claims work it did not do.
 - 🗂️ **History:** search past conversations, resume one, or delete it.
 
@@ -204,7 +211,7 @@ loaded. [`.env.example`](.env.example) lists every setting.
 | `VYOM_MAX_TOOL_CALLS` | `80` | Tool calls per request |
 | `VYOM_COMMAND_TIMEOUT_MS` | `120000` | Maximum command run time |
 | `VYOM_ALLOWED_ROOTS` | whole Mac | JSON array to restrict file access |
-| `VYOM_SEARXNG_URL` | unset | Your SearXNG instance for web search; without it, Wikipedia and Google News are used |
+| `VYOM_SEARXNG_URL` | unset | Your SearXNG instance for web search; without it, DuckDuckGo is used (Wikipedia and Google News if it is unavailable) |
 | `VYOM_PROVIDER` | `ollama` | `placeholder` runs without a model |
 | `VYOM_DEBUG` | unset | `1` prints diagnostic events |
 

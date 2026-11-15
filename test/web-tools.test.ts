@@ -138,20 +138,57 @@ const NEWS_RSS = `<rss><channel>
 </channel></rss>`;
 const rss = (body: string): Response => new Response(body, { headers: { 'content-type': 'application/rss+xml' } });
 
-test('without SearXNG, web_search uses Wikipedia and Google News, interleaved', async () => {
+test('without SearXNG, web_search uses DuckDuckGo: results parsed, wrapped links unwrapped, ads dropped', async () => {
+  const requested: string[] = [];
+  const page = `<div class="result results_links web-result"><div class="links_main links_deep result__body">
+    <h2 class="result__title"><a rel="nofollow" class="result__a" href="https://reactnative.dev/versions">Versions - <b>React</b> Native</a></h2>
+    <a class="result__snippet" href="https://reactnative.dev/versions">Ahead of each <b>stable</b>
+      release, release candidates.</a></div></div>
+    <div class="result__body"><a class="result__a" href="//duckduckgo.com/l/?uddg=https%3A%2F%2Fwww.npmjs.com%2Fpackage%2Freact-native&amp;rut=abc">react-native - npm</a>
+    <a class="result__snippet">Latest version: 0.86.2</a></div>
+    <div class="result__body"><a class="result__a" href="https://duckduckgo.com/y.js?ad_provider=bing&amp;u3=x">Sponsored</a></div>`;
+  const client = new HttpWebClient({ fetchImplementation: fakeFetch({ 'https://html.duckduckgo.com/html/': () => html(page) }, requested) });
+  const asked: ActionProposal[] = [];
+  const result = await webExecutor(client, [true], asked).execute('web_search', { query: 'react native' }, new AbortController().signal);
+  assert.deepEqual(result, {
+    status: 'searched',
+    query: 'react native',
+    results: [
+      { title: 'Versions - React Native', url: 'https://reactnative.dev/versions', snippet: 'Ahead of each stable release, release candidates.' },
+      { title: 'react-native - npm', url: 'https://www.npmjs.com/package/react-native', snippet: 'Latest version: 0.86.2' },
+    ],
+  });
+  assert.deepEqual(asked, [{ kind: 'web', operation: 'search', target: 'react native', host: 'html.duckduckgo.com' }]);
+  assert.deepEqual(requested, ['https://html.duckduckgo.com/html/']);
+});
+
+test('when DuckDuckGo is unavailable, web_search falls back to Wikipedia and Google News after their own approval', async () => {
   const requested: string[] = [];
   const client = new HttpWebClient({
     fetchImplementation: fakeFetch({
+      'https://html.duckduckgo.com/html/': () => new Response('<p>anomaly: bots</p>', { status: 202, headers: { 'content-type': 'text/html' } }),
       'https://en.wikipedia.org/w/api.php': () => new Response(JSON.stringify({ query: { search: [{ title: 'Chandrayaan-3', snippet: 'Indian <span>lunar</span> mission' }] } }), { headers: { 'content-type': 'application/json' } }),
       'https://news.google.com/rss/search': () => rss(NEWS_RSS),
     }, requested),
   });
   const asked: ActionProposal[] = [];
-  const result = await webExecutor(client, [true], asked).execute('web_search', { query: 'chandrayaan' }, new AbortController().signal) as { results: { title: string; url: string }[] };
+  const result = await webExecutor(client, [true, true], asked).execute('web_search', { query: 'chandrayaan' }, new AbortController().signal) as { results: { title: string; url: string }[]; note?: string };
   assert.deepEqual(result.results.map(item => item.title), ['Chandrayaan-3 (Wikipedia)', 'Chandrayaan update (ISRO)', 'Rupee closes higher (Mint)']);
   assert.equal(result.results[0]?.url, 'https://en.wikipedia.org/wiki/Chandrayaan-3');
-  assert.deepEqual(asked, [{ kind: 'web', operation: 'search', target: 'chandrayaan', host: 'wikipedia.org + news.google.com' }]);
+  assert.match(result.note ?? '', /html\.duckduckgo\.com was unavailable \(DuckDuckGo asked for a bot check/);
+  assert.deepEqual(asked, [
+    { kind: 'web', operation: 'search', target: 'chandrayaan', host: 'html.duckduckgo.com' },
+    { kind: 'web', operation: 'search', target: 'chandrayaan', host: 'wikipedia.org + news.google.com' },
+  ]);
   assert.ok(requested.some(url => url.includes('srsearch=chandrayaan')));
+
+  // Refusing the fallback hosts sends the query nowhere else.
+  const refused: ActionProposal[] = [];
+  await assert.rejects(
+    webExecutor(client, [true, false], refused).execute('web_search', { query: 'chandrayaan' }, new AbortController().signal),
+    (error: unknown) => error instanceof ToolExecutionError,
+  );
+  assert.equal(refused.length, 2);
 });
 
 test('news_headlines returns publisher, time, and link from Google News', async () => {
@@ -227,6 +264,31 @@ test('the browser tool drives a browser port: one Chrome grant covers browsing, 
   await executor.execute('browser', { action: 'click', link: 1 }, new AbortController().signal);
   await executor.execute('browser', { action: 'scroll', direction: 'down' }, new AbortController().signal);
   assert.equal(asked.length, 1);
-  assert.deepEqual(performed, [{ kind: 'search', query: 'best laptop' }, { kind: 'click', link: 1 }, { kind: 'scroll', direction: 'down' }]);
+  // Typing into a numbered input, finding text, and tabs go through the same port.
+  await executor.execute('browser', { action: 'type', field: 2, text: 'react native', submit: true }, new AbortController().signal);
+  await executor.execute('browser', { action: 'find', text: 'price' }, new AbortController().signal);
+  await executor.execute('browser', { action: 'switch', tab: 3 }, new AbortController().signal);
+  assert.deepEqual(performed, [
+    { kind: 'search', query: 'best laptop' }, { kind: 'click', link: 1 }, { kind: 'scroll', direction: 'down' },
+    { kind: 'type', field: 2, text: 'react native', submit: true }, { kind: 'find', text: 'price' }, { kind: 'switch', tab: 3 },
+  ]);
+  assert.equal(asked.length, 1);
+  await assert.rejects(executor.execute('browser', { action: 'type', text: 'x' }, new AbortController().signal), /type needs field/u);
   await assert.rejects(executor.execute('browser', { action: 'open', url: 'http://192.168.1.1/' }, new AbortController().signal), /private network/u);
+});
+
+test('ChromeBrowser lists the window tabs and reports an input that is gone', async () => {
+  const { ChromeBrowser } = await import('../src/desktop/chrome-browser.ts');
+  const chrome = new ChromeBrowser(async (lines, args) => {
+    if (lines.some(line => line.includes('active tab index of front window as string'))) return '2\n1\tDocs\thttps://docs.example/\n2\tnpm\thttps://www.npmjs.com/\n';
+    if (args[0]?.includes('data-vyom-input="')) return 'missing';
+    return JSON.stringify({ url: 'https://www.npmjs.com/', title: 'npm', text: 'Search packages', links: [], inputs: [{ n: 1, type: 'search', label: 'Search packages' }] });
+  });
+  const page = await chrome.perform({ kind: 'tabs' }, new AbortController().signal);
+  assert.deepEqual(page.tabs, [
+    { n: 1, title: 'Docs', url: 'https://docs.example/', active: false },
+    { n: 2, title: 'npm', url: 'https://www.npmjs.com/', active: true },
+  ]);
+  assert.deepEqual(page.inputs, [{ n: 1, type: 'search', label: 'Search packages' }]);
+  await assert.rejects(chrome.perform({ kind: 'type', field: 3, text: 'x', submit: false }, new AbortController().signal), /Input 3 is not on the page/u);
 });

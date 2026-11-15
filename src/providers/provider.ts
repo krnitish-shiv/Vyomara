@@ -23,6 +23,8 @@ export interface ModelProvider {
   ): Promise<unknown>;
   /** False when the model cannot call tools; the agent then runs chat-only. */
   supportsTools?(): Promise<boolean>;
+  /** True when the model can see images (Ollama "vision" capability). */
+  supportsVision?(): Promise<boolean>;
   /** Read this system prompt and tool list ahead of the first request (prompt caching). Best effort. */
   prime?(system: string, tools: readonly ModelToolDefinition[], signal: AbortSignal): Promise<void>;
 }
@@ -130,11 +132,19 @@ function ollamaMessage(message: SessionMessage): Record<string, unknown> {
   if (message.role === 'tool') {
     return { role: 'tool', tool_name: message.toolId, content: message.content };
   }
+  if (message.role === 'user') {
+    // The app's context for the turn goes ahead of the user's words (see buildTurnContext).
+    const content = message.context === undefined ? message.content : `${message.context}\n\n${message.content}`;
+    return { role: 'user', content, ...(message.images && message.images.length > 0 ? { images: message.images } : {}) };
+  }
   return { role: message.role, content: message.content };
 }
 
+/** Built-in tools plus room for MCP servers; each tool costs prompt tokens, so this stays bounded. */
+export const MAX_MODEL_TOOLS = 64;
+
 function ollamaTools(tools: readonly ModelToolDefinition[]): readonly Record<string, unknown>[] {
-  if (tools.length > 32) throw new ProviderError('malformed-response');
+  if (tools.length > MAX_MODEL_TOOLS) throw new ProviderError('malformed-response');
   const seen = new Set<string>();
   return tools.map(tool => {
     if (
@@ -350,7 +360,8 @@ export class OllamaProvider implements ModelProvider {
     this.maxResponseBytes = options.maxResponseBytes ?? 4_000_000;
     this.maxResponseChars = options.maxResponseChars ?? 32_000;
     this.maxToolCallArgumentsChars = options.maxToolCallArgumentsChars ?? 400_000;
-    this.maxRequestBytes = options.maxRequestBytes ?? 8_000_000;
+    // Room for a few attached pictures (base64) besides the conversation.
+    this.maxRequestBytes = options.maxRequestBytes ?? 48_000_000;
     this.numCtx = options.numCtx;
     this.think = options.think;
     this.baseUrl = `${baseUrl.origin}${baseUrl.pathname.replace(/\/+$/, '')}`;
@@ -622,6 +633,10 @@ export class OllamaProvider implements ModelProvider {
    * Whether the configured model can call tools. Unknown capabilities count as
    * yes; a model Ollama reports without "tools" runs in chat-only mode.
    */
+  async supportsVision(): Promise<boolean> {
+    return (await this.modelCapabilities()).includes('vision');
+  }
+
   async supportsTools(): Promise<boolean> {
     if (this.toolsRejected) return false;
     const capabilities = await this.modelCapabilities();

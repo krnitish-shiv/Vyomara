@@ -1,5 +1,6 @@
 import { existsSync } from 'node:fs';
 import { ChromeBrowser } from '../desktop/chrome-browser.ts';
+import { MacSystemControl } from '../desktop/mac-system-control.ts';
 import { MemoryStore } from '../storage/memory-store.ts';
 import { canShowDiff, VSCodeDiffPreview } from '../desktop/vscode-diff.ts';
 import { ChangeJournal } from '../desktop/change-journal.ts';
@@ -48,6 +49,8 @@ import {
 } from '../desktop/file-operation-approval.ts';
 import { ActionApprovalError, ActionApprovalManager } from '../desktop/action-approval.ts';
 import { MacApplicationLauncher } from '../desktop/mac-application-launcher.ts';
+import { homedir } from 'node:os';
+import { McpManager, readMcpConfig } from '../tools/mcp-client.ts';
 import { ShellCommandRunner } from '../tools/command-runner.ts';
 import { HttpWebClient } from '../tools/web-client.ts';
 import { ApprovalMemory, DEFAULT_BROWSER, grantId, parseGrantId } from '../tools/action-tools.ts';
@@ -69,6 +72,9 @@ let activeFileOperationApproval: FileOperationApprovalManager | undefined;
 let activeActionApproval: ActionApprovalManager | undefined;
 let activeModelPull: AbortController | undefined;
 const shellCommandRunner = new ShellCommandRunner();
+/** The user's MCP servers (mcp.json in the data folder), started at launch. */
+const mcpManager = new McpManager();
+const mcpAllowed = new Set<string>();
 /** Commands the user chose to always allow; cleared when the app quits. */
 /** Standing permissions (apps, browsers, web hosts) are loaded from disk at startup. */
 let approvalMemory = new ApprovalMemory();
@@ -76,6 +82,7 @@ const macSpeechRunner = new MacSpeechRunner();
 /** Approved file changes per request, so "undo karo" can put them back. */
 /** Drives the user's Chrome for the browser tool, when Chrome is installed. */
 const chromeBrowser = existsSync('/Applications/Google Chrome.app') ? new ChromeBrowser() : undefined;
+const macSystemControl = process.platform === 'darwin' ? new MacSystemControl() : undefined;
 const changeJournal = new ChangeJournal({ moveToTrash: path => shell.trashItem(path) });
 /** Told to the model on the next request in a session after an undo. */
 const undoNotes = new Map<string, string>();
@@ -209,7 +216,9 @@ function describeGrant(id: string): { readonly id: string; readonly kind: string
     ? `Open ${grant.application}`
     : grant.kind === 'browser'
       ? `Open web pages in ${grant.browser === DEFAULT_BROWSER ? 'your default browser' : grant.browser}`
-      : `Read pages from ${grant.host}`;
+      : grant.kind === 'command'
+        ? `Run \`${grant.pattern}\` in ${grant.folder.replace(homedir(), '~')}`
+        : `Read pages from ${grant.host}`;
   return { id, kind: grant.kind, label };
 }
 
@@ -573,6 +582,9 @@ function desktopToolOptions(
       ...(macApplicationLauncher ? { launcher: macApplicationLauncher } : {}),
       web: new HttpWebClient(desktopConfig.searxngUrl === undefined ? {} : { searxngUrl: desktopConfig.searxngUrl }),
       ...(chromeBrowser ? { browser: chromeBrowser } : {}),
+      ...(macSystemControl ? { system: macSystemControl } : {}),
+      mcp: mcpManager,
+      mcpAllowed,
     },
   };
 }
@@ -581,7 +593,7 @@ let activePrime: AbortController | undefined;
 
 /**
  * Load the chosen model in the background, then let it read a new chat's
- * system prompt and tools (~4,000 tokens, ~25 s on a 14B model), so the
+ * system prompt and tools (~8,000 tokens, ~45 s on a 14B model), so the
  * first message does not wait for either. Runs again when the model,
  * context size, or assistant changes, since those change the prompt.
  */
@@ -802,6 +814,8 @@ ipcMain.handle('vyomara:chat-send', async (_event, input: unknown) => {
       {
         ...(request.sessionId === undefined ? {} : { sessionId: request.sessionId }),
         ...(request.voice ? { voice: true } : {}),
+        ...(request.planOnly ? { planOnly: true } : {}),
+        ...(request.images ? { images: request.images } : {}),
         persona,
         onText: text => send('vyomara:chat-text', { requestId: request.requestId, text }),
         onToolActivity: activity => send('vyomara:tool-activity', { requestId: request.requestId, ...activity }),
@@ -1235,6 +1249,16 @@ app.whenReady().then(async () => {
 
   mainWindow = createWindow();
   warmUpModel(config);
+  // MCP servers start in the background; their tools change the prompt, so prime again once they are ready.
+  const startupConfig = config;
+  void readMcpConfig(startupConfig.dataDirectory)
+    .then(async servers => {
+      if (Object.keys(servers).length === 0) return;
+      await mcpManager.start(servers);
+      console.error(JSON.stringify({ event: 'mcp.started', servers: mcpManager.status().map(server => ({ name: server.name, state: server.state, tools: server.tools })) }));
+      warmUpModel(config);
+    })
+    .catch(error => console.error(JSON.stringify({ event: 'mcp.config-invalid', message: error instanceof Error ? error.message : 'unknown' })));
   app.on('activate', () => showMainWindow());
   registerVoiceShortcut();
   pipEnabled = await readPipEnabled();
@@ -1267,6 +1291,8 @@ app.on('before-quit', () => {
   activeRequest?.abort();
   activeModelPull?.abort();
   activePrime?.abort();
+  shellCommandRunner.stopAll();
+  mcpManager.stopAll();
   macSpeechRunner.stop();
   whisperServer.stop();
   void localWhisperRunner?.stop();

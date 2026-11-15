@@ -4,7 +4,8 @@ import type { PersonaId } from '../shared/persona.ts';
 import type { Logger } from '../types.ts';
 import { Session } from '../session/session.ts';
 import type { SessionMessage } from '../session/session.ts';
-import { primeAgent, runAgent } from '../agent/agent.ts';
+import { primeAgent, runAgent, runExplorer } from '../agent/agent.ts';
+import type { ExplorePort } from '../tools/explore-tool.ts';
 import type { ToolActivity } from '../agent/agent.ts';
 import { OllamaProvider, PlaceholderProvider } from '../providers/provider.ts';
 import type { ModelProvider } from '../providers/provider.ts';
@@ -85,6 +86,8 @@ export interface RequestOptions {
   readonly onPlan?: (steps: readonly PlanStep[]) => void;
   /** The request was spoken; replies should be short enough to read aloud. */
   readonly voice?: boolean;
+  readonly planOnly?: boolean;
+  readonly images?: readonly string[];
   readonly persona?: PersonaId;
   readonly includeFilesystemTools?: boolean;
   readonly fileOperationApproval?: FileOperationApprovalPort;
@@ -104,9 +107,10 @@ export function createProvider(config: AppConfig): ModelProvider {
     : new PlaceholderProvider();
 }
 
-function createTools(config: AppConfig, logger: Logger, memory: MemoryStore, options: RequestOptions): ToolExecutor {
+function createTools(config: AppConfig, logger: Logger, memory: MemoryStore, options: RequestOptions, explore: ExplorePort = {}): ToolExecutor {
   return new ToolExecutor({
     registry: createDefaultToolRegistry(config, {
+      explore,
       ...(options.includeFilesystemTools === undefined ? {} : { includeFilesystemTools: options.includeFilesystemTools }),
       ...(options.fileOperationApproval ? { fileOperationApproval: options.fileOperationApproval } : {}),
       ...(options.actions ? { actions: options.actions } : {}),
@@ -151,13 +155,23 @@ export async function runRequest(
       : store.getSession(options.sessionId);
     const taskLogger = withPersistentAudit(logger, store);
     const memory = new MemoryStore(config.dataDirectory);
-    const tools = createTools(config, taskLogger, memory, options);
+    const explore: ExplorePort = {};
+    const tools = createTools(config, taskLogger, memory, options, explore);
+    const provider = createProvider(config);
+    explore.run = (task, signal) => runExplorer(task, signal, {
+      provider,
+      tools,
+      config,
+      logger: taskLogger,
+      ...(options.persona ? { persona: options.persona } : {}),
+      ...(options.onToolActivity ? { onToolActivity: options.onToolActivity } : {}),
+    });
 
     let response: string | undefined;
     let requestError: unknown;
     try {
       response = await runAgent(prompt, signal, {
-        provider: createProvider(config),
+        provider,
         tools,
         config,
         session,
@@ -166,6 +180,8 @@ export async function runRequest(
         ...(options.onToolActivity ? { onToolActivity: options.onToolActivity } : {}),
         ...(options.onPlan ? { onPlan: options.onPlan } : {}),
         ...(options.voice ? { voice: true } : {}),
+        ...(options.planOnly ? { planOnly: true } : {}),
+        ...(options.images && options.images.length > 0 ? { images: options.images } : {}),
         ...(options.persona ? { persona: options.persona } : {}),
         memory,
       });

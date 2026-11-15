@@ -35,10 +35,78 @@ const READ_PAGE = `(() => {
   }
   const anchors = [...document.querySelectorAll('a[href]')].filter(a => visible(a) && a.innerText.trim() && /^https?:/.test(a.href)).slice(0, 80);
   const links = anchors.map((a, i) => { a.setAttribute('data-vyom-link', String(i + 1)); return { n: i + 1, text: a.innerText.trim().replace(/\\s+/g, ' ').slice(0, 100), url: a.href }; });
+  document.querySelectorAll('[data-vyom-input]').forEach(el => el.removeAttribute('data-vyom-input'));
+  const fields = [...document.querySelectorAll('input:not([type=hidden]):not([type=submit]):not([type=button]):not([type=image]), textarea, select, [contenteditable="true"]')].filter(visible).slice(0, 40);
+  const inputs = fields.map((el, i) => {
+    el.setAttribute('data-vyom-input', String(i + 1));
+    const labelled = el.id ? document.querySelector('label[for="' + CSS.escape(el.id) + '"]') : null;
+    const label = el.getAttribute('aria-label') || el.getAttribute('placeholder') || (labelled && labelled.innerText) || el.getAttribute('name') || el.getAttribute('title') || '';
+    const type = el.tagName === 'INPUT' ? (el.type || 'text') : el.tagName.toLowerCase();
+    return { n: i + 1, type, label: String(label).replace(/\\s+/g, ' ').trim().slice(0, 80) };
+  });
   const captcha = /unusual traffic|not a robot|captcha/i.test(document.body.innerText.slice(0, 3000));
-  return JSON.stringify({ url: location.href, title: document.title, text: document.body.innerText, links, results, captcha,
+  return JSON.stringify({ url: location.href, title: document.title, text: document.body.innerText, links, inputs, results, captcha,
     scroll: Math.round(scrollY), height: document.documentElement.scrollHeight, viewport: innerHeight });
 })()`;
+
+/** Runs in the page: fills the numbered input the way a person typing would (so React-style inputs notice), optionally submits. */
+const typeScript = (field: number, text: string, submit: boolean): string => `(() => {
+  const el = document.querySelector('[data-vyom-input="${field}"]');
+  if (!el) return 'missing';
+  el.focus();
+  const text = ${JSON.stringify(text)};
+  if (el.isContentEditable) {
+    el.textContent = text;
+  } else {
+    const proto = el.tagName === 'TEXTAREA' ? HTMLTextAreaElement.prototype : el.tagName === 'SELECT' ? HTMLSelectElement.prototype : HTMLInputElement.prototype;
+    const setter = Object.getOwnPropertyDescriptor(proto, 'value');
+    if (setter && setter.set) setter.set.call(el, text); else el.value = text;
+  }
+  el.dispatchEvent(new Event('input', { bubbles: true }));
+  el.dispatchEvent(new Event('change', { bubbles: true }));
+  ${submit ? `if (el.form) { if (el.form.requestSubmit) el.form.requestSubmit(); else el.form.submit(); }
+  else { for (const type of ['keydown', 'keypress', 'keyup']) el.dispatchEvent(new KeyboardEvent(type, { key: 'Enter', code: 'Enter', keyCode: 13, which: 13, bubbles: true })); }` : ''}
+  return 'ok';
+})()`;
+
+/** Runs in the page: scrolls to the first match and returns the text around each match. */
+const findScript = (text: string): string => `(() => {
+  const q = ${JSON.stringify(text)};
+  const matched = !!window.find(q, false, false, true, false, true, false);
+  const body = document.body.innerText; const lower = body.toLowerCase(); const needle = q.toLowerCase();
+  const snippets = []; let from = 0;
+  while (snippets.length < 5) {
+    const at = lower.indexOf(needle, from);
+    if (at < 0) break;
+    snippets.push(body.slice(Math.max(0, at - 150), at + q.length + 150).replace(/\\s+/g, ' ').trim());
+    from = at + q.length;
+  }
+  return JSON.stringify({ matched, snippets });
+})()`;
+
+const LIST_TABS = [
+  'tell application "Google Chrome"',
+  'if (count of windows) is 0 then return ""',
+  'set out to (active tab index of front window as string) & linefeed',
+  'repeat with i from 1 to count of tabs of front window',
+  'set t to tab i of front window',
+  'set out to out & i & tab & (title of t) & tab & (URL of t) & linefeed',
+  'end repeat',
+  'return out',
+  'end tell',
+];
+
+const SWITCH_TAB = [
+  'on run argv',
+  'tell application "Google Chrome"',
+  'if (count of windows) is 0 then error "no window" number 2',
+  'set active tab index of front window to ((item 1 of argv) as integer)',
+  'activate',
+  'end tell',
+  'end run',
+];
+
+const CLOSE_TAB = ['tell application "Google Chrome" to if (count of windows) > 0 then close active tab of front window'];
 
 const EXECUTE = [
   'on run argv',
@@ -98,6 +166,29 @@ export class ChromeBrowser implements BrowserPort {
           await this.#run(GO_BACK, [], signal);
           await this.#settle(signal);
           break;
+        case 'type': {
+          const typed = await this.#run(EXECUTE, [typeScript(action.field, action.text, action.submit)], signal);
+          if (typed.trim() !== 'ok') throw new ToolFailure(`Input ${action.field} is not on the page any more. Read the page again to get fresh input numbers.`, 'not-found');
+          if (action.submit) await this.#settle(signal);
+          else await new Promise(resolve => setTimeout(resolve, 300));
+          break;
+        }
+        case 'find': {
+          const raw = await this.#run(EXECUTE, [findScript(action.text)], signal);
+          const found = JSON.parse(raw) as BrowserPage['found'];
+          const page = await this.#read(signal);
+          return { ...page, ...(found ? { found } : {}) };
+        }
+        case 'tabs':
+          return { ...await this.#read(signal), tabs: await this.#tabs(signal) };
+        case 'switch':
+          await this.#run(SWITCH_TAB, [String(action.tab)], signal);
+          await new Promise(resolve => setTimeout(resolve, 300));
+          return { ...await this.#read(signal), tabs: await this.#tabs(signal) };
+        case 'close':
+          await this.#run(CLOSE_TAB, [], signal);
+          await new Promise(resolve => setTimeout(resolve, 300));
+          return { ...await this.#read(signal), tabs: await this.#tabs(signal) };
         default:
           break;
       }
@@ -105,6 +196,16 @@ export class ChromeBrowser implements BrowserPort {
     } catch (error) {
       throw this.#error(error);
     }
+  }
+
+  async #tabs(signal: AbortSignal): Promise<NonNullable<BrowserPage['tabs']>> {
+    const [first, ...rest] = (await this.#run(LIST_TABS, [], signal)).split('\n');
+    const active = Number.parseInt(first ?? '', 10);
+    return rest.filter(line => line.includes('\t')).slice(0, 60).map(line => {
+      const [n, title = '', url = ''] = line.split('\t');
+      const index = Number.parseInt(n ?? '', 10);
+      return { n: index, title: title.slice(0, 120), url, active: index === active };
+    });
   }
 
   async #open(url: string, signal: AbortSignal): Promise<void> {
@@ -146,6 +247,9 @@ export class ChromeBrowser implements BrowserPort {
     }
     if (/-600|isn.t running|can.t get application/iu.test(message)) {
       return new ToolFailure('Google Chrome is not installed or could not be started.', 'not-found');
+    }
+    if (/no window|\(2\)|Invalid index|-1719/iu.test(message)) {
+      return new ToolFailure('There is no such tab or window in Chrome. List the tabs again.', 'not-found');
     }
     return new ToolFailure('Chrome could not do that.', 'tool-failed');
   }

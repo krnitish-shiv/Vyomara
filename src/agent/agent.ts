@@ -6,12 +6,14 @@ import { ProviderError } from '../providers/provider.ts';
 import type { ModelProvider, ProviderResponse } from '../providers/provider.ts';
 import { OperationStoppedError, runBounded } from '../shared/bounded.ts';
 import { Session } from '../session/session.ts';
+import type { SessionMessage } from '../session/session.ts';
 import { TaskRun } from '../tasks/task-run.ts';
 import { ToolExecutionError, ToolExecutor } from '../tools/executor.ts';
 import { TOOL_ID_PATTERN } from '../tools/contracts.ts';
 import type { ModelToolDefinition } from '../tools/contracts.ts';
-import { CHARS_PER_TOKEN, fitMessagesToBudget } from './context.ts';
-import { buildSystemPrompt, detectEnvironment, spokenRequestNote } from './system-prompt.ts';
+import { CHARS_PER_TOKEN, fitMessagesToBudget, summaryCut, transcriptForSummary } from './context.ts';
+import { buildSystemPrompt, buildTurnContext, carriesProjectInstructions, detectEnvironment, spokenRequestNote } from './system-prompt.ts';
+import { expandSlashCommand, hooksFor } from './project-extras.ts';
 import type { PersonaId } from '../shared/persona.ts';
 import type { MemoryStore } from '../storage/memory-store.ts';
 import { urlsIn, verifyLinks } from '../shared/link-check.ts';
@@ -53,6 +55,15 @@ export interface AgentOptions {
   readonly onPlan?: (steps: readonly PlanStep[]) => void;
   /** Spoken request: ask for a short reply (fewer tokens, faster, and pleasant to hear). */
   readonly voice?: boolean;
+  /** Plan mode: look around with read-only tools and reply with a plan; nothing is changed or run. */
+  readonly planOnly?: boolean;
+  /** Pictures attached to this request (base64), sent with it to a vision model. */
+  readonly images?: readonly string[];
+  /**
+   * Only these tools may run (a helper such as explore). The model still sees
+   * the full tool list, so the cached prompt matches; others are refused.
+   */
+  readonly allowedTools?: ReadonlySet<string>;
   /** Which assistant (name, gender) answers. */
   readonly persona?: PersonaId;
   /** Lasting facts from earlier conversations, shown in the system prompt. */
@@ -96,6 +107,10 @@ export function describeToolCall(toolId: string, args: Readonly<Record<string, u
       return `Searching “${clip(String(args.pattern ?? ''), 40)}” in ${shortPath(args.path)}`;
     case 'edit_file':
       return `Editing ${shortPath(args.path)}`;
+    case 'notebook_edit':
+      return `${args.action === 'delete' ? 'Deleting' : args.action === 'insert' ? 'Adding' : 'Editing'} cell ${String(args.cell ?? '')} in ${shortPath(args.path)}`;
+    case 'multi_edit':
+      return `Editing ${shortPath(args.path)} (several changes)`;
     case 'write_file':
       return `Writing ${shortPath(args.path)}`;
     case 'create_directory':
@@ -103,7 +118,7 @@ export function describeToolCall(toolId: string, args: Readonly<Record<string, u
     case 'delete_path':
       return `Moving ${shortPath(args.path)} to Trash`;
     case 'run_command':
-      return `Running \`${clip(String(args.command ?? ''), 60)}\``;
+      return `${args.background === true ? 'Starting in the background' : 'Running'} \`${clip(String(args.command ?? ''), 60)}\``;
     case 'open_application':
       return `Opening ${String(args.application ?? 'app')}${args.path ? ` with ${shortPath(args.path)}` : ''}`;
     case 'open_url':
@@ -119,6 +134,38 @@ export function describeToolCall(toolId: string, args: Readonly<Record<string, u
       return `Reading ${clip(String(args.url ?? ''), 60)}`;
     case 'web_search':
       return `Searching the web for “${clip(String(args.query ?? ''), 50)}”`;
+    case 'git_info':
+      return `Git ${String(args.action ?? 'status')}${args.target ? ` ${clip(String(args.target), 40)}` : ''} in ${shortPath(args.path)}`;
+    case 'explore':
+      return `Asking a helper: ${clip(String(args.task ?? ''), 60)}`;
+    case 'command_output':
+      return args.action === 'stop' ? `Stopping background command ${String(args.id ?? '')}` : args.action === 'list' ? 'Listing background commands' : `Reading output of ${String(args.id ?? '')}`;
+    case 'check_problems':
+      return `Checking ${shortPath(args.path)} for problems`;
+    case 'git_branch':
+      return `Git ${String(args.action ?? 'list').replace('_', ' ')}${args.name ? ` ${clip(String(args.name), 40)}` : ''}`;
+    case 'git_sync':
+      return `Git ${String(args.action ?? 'fetch')}${args.branch ? ` ${clip(String(args.branch), 40)}` : ''}`;
+    case 'github':
+      return `GitHub: ${String(args.action ?? '').replace('_', ' ')}${args.number ? ` #${String(args.number)}` : ''}`;
+    case 'git_commit':
+      return `Committing “${clip(String(args.message ?? '').split('\n')[0] ?? '', 50)}”`;
+    case 'current_time':
+      return args.timezone ? `Checking the time in ${clip(String(args.timezone), 30)}` : 'Checking the time';
+    case 'calculate':
+      return `Calculating ${clip(String(args.expression ?? ''), 50)}`;
+    case 'convert_units':
+      return `Converting ${clip(String(args.value ?? ''), 15)} ${clip(String(args.from ?? ''), 12)} to ${clip(String(args.to ?? ''), 12)}`;
+    case 'date_math':
+      return 'Working out dates';
+    case 'system_info':
+      return 'Checking this Mac';
+    case 'weather':
+      return `Getting the weather for ${clip(String(args.place ?? ''), 40)}`;
+    case 'currency_convert':
+      return `Converting ${clip(String(args.amount ?? ''), 15)} ${String(args.from ?? '').toUpperCase()} to ${String(args.to ?? '').toUpperCase()}`;
+    case 'software_version':
+      return `Checking the latest version of ${clip(String(args.name ?? ''), 40)}`;
     case 'news_headlines':
       return `Getting the news${args.topic ? ` about “${clip(String(args.topic), 40)}”` : ''}`;
     case 'browser': {
@@ -131,7 +178,7 @@ export function describeToolCall(toolId: string, args: Readonly<Record<string, u
       return 'Reading the page in Chrome';
     }
     default:
-      return `Using ${toolId}`;
+      return toolId.startsWith('mcp_') ? `Using ${toolId.slice(4).replace(/_/u, ': ').replace(/_/gu, ' ')} (MCP)` : `Using ${toolId}`;
   }
 }
 
@@ -148,7 +195,7 @@ function verifiedAction(
 ): VerifiedAction | undefined {
   if (!isRecord(result)) return undefined;
   const path = `\`${shortPath(result.path ?? args.path)}\``;
-  if (toolId === 'edit_file' || toolId === 'write_file' || toolId === 'create_directory' || toolId === 'delete_path') {
+  if (toolId === 'edit_file' || toolId === 'multi_edit' || toolId === 'notebook_edit' || toolId === 'write_file' || toolId === 'create_directory' || toolId === 'delete_path') {
     const verb = result.operation === 'create-file'
       ? 'Created'
       : result.operation === 'create-directory'
@@ -167,8 +214,29 @@ function verifiedAction(
     const command = `\`${clip(String(result.command ?? args.command ?? ''), 70)}\``;
     if (result.status === 'rejected') return { ok: false, text: `You rejected running ${command}` };
     if (result.timedOut === true) return { ok: false, text: `Ran ${command} — timed out` };
+    if (result.background === true) return { ok: result.state === 'running', text: `Started ${command} in the background (${String(result.id)})${result.state === 'running' ? '' : ' — it exited'}` };
     const remembered = result.approval === 'remembered' ? ' (always-allowed)' : '';
     return { ok: result.exitCode === 0, text: `Ran ${command}${remembered} — exit code ${String(result.exitCode)}` };
+  }
+  if (toolId === 'check_problems') {
+    if (result.status === 'rejected') return { ok: false, text: `You rejected running \`${clip(String(result.command ?? ''), 60)}\`` };
+    return { ok: result.exitCode === 0, text: `Checked for problems with \`${clip(String(result.command ?? ''), 60)}\` — ${String(result.summary ?? '')}` };
+  }
+  if (toolId.startsWith('mcp_')) {
+    const what = `${String(result.tool ?? toolId)} on ${String(result.server ?? 'MCP')}`;
+    if (result.status === 'rejected') return { ok: false, text: `You rejected ${what}` };
+    return { ok: result.status === 'done', text: `Used ${what} (MCP)${result.status === 'error' ? ' — it reported an error' : ''}` };
+  }
+  if ((toolId === 'git_branch' || toolId === 'git_sync' || toolId === 'github') && typeof result.command === 'string') {
+    const command = `\`${clip(result.command, 80)}\``;
+    if (result.status === 'rejected') return { ok: false, text: `You rejected ${command}` };
+    return { ok: result.status === 'done', text: `Ran ${command}${result.status === 'done' ? '' : ` — exit code ${String(result.exitCode)}`}` };
+  }
+  if (toolId === 'git_commit') {
+    if (result.status === 'rejected') return { ok: false, text: 'You rejected the commit' };
+    return result.status === 'committed'
+      ? { ok: true, text: `Committed ${clip(String(result.commit ?? ''), 90)}` }
+      : { ok: false, text: `Commit failed — exit code ${String(result.exitCode)}` };
   }
   if (toolId === 'open_application') {
     const name = `${String(result.application)}${result.path ? ` (${shortPath(result.path)})` : ''}`;
@@ -217,7 +285,7 @@ function verifiedAction(
 const INVALID_CALL_CODES = new Set(['invalid-input', 'input-too-large', 'unknown-tool', 'policy-denied']);
 
 const MUTATING_TOOLS = new Set([
-  'edit_file', 'write_file', 'create_directory', 'delete_path', 'run_command', 'open_application', 'open_url',
+  'edit_file', 'multi_edit', 'notebook_edit', 'git_commit', 'git_branch', 'git_sync', 'github', 'check_problems', 'write_file', 'create_directory', 'delete_path', 'run_command', 'open_application', 'open_url',
   'fetch_url', 'web_search', 'control_application', 'news_headlines',
   // Scrolling or reading again is a real step, not a repeated mistake.
   'browser',
@@ -229,8 +297,8 @@ const CONTINUE_NUDGE =
 const APPLY_CHANGE_NUDGE =
   'You described a code change but did not apply it. Do not ask the user to paste code: make the change yourself with edit_file (the user reviews it before it is written), then verify it. If you have not reproduced the problem yet, do that first.';
 
-/** Tools that change files; withheld when the user asked for no changes. */
-const FILE_CHANGE_TOOLS = new Set(['edit_file', 'write_file', 'create_directory', 'delete_path']);
+/** Tools that change files; refused when the user asked for no changes (they stay listed so the cached prompt matches). */
+const FILE_CHANGE_TOOLS = new Set(['edit_file', 'multi_edit', 'notebook_edit', 'git_branch', 'git_sync', 'write_file', 'create_directory', 'delete_path', 'git_commit']);
 
 /**
  * "don't change anything", "just tell me", "kuch mat badlo", "sirf batao":
@@ -245,7 +313,53 @@ export function forbidsChanges(prompt: string): boolean {
 }
 
 /** Tools that read the web in the background. */
-const WEB_TOOLS = new Set(['web_search', 'fetch_url', 'news_headlines', 'browser']);
+const WEB_TOOLS = new Set(['web_search', 'fetch_url', 'news_headlines', 'browser', 'weather', 'currency_convert', 'software_version']);
+
+const PLAN_MODE_NOTE =
+  '(Plan mode: do not change, run, or open anything yet. Investigate with read-only tools as much as needed, then reply with a short numbered plan: each step names the file or command and what will change and why, followed by risks or questions. Then stop; the user will say go ahead.)';
+
+/** Tools with side effects, refused in plan mode (they stay in the tool list so the cached prompt matches). */
+const PLAN_MODE_BLOCKED = new Set([
+  'edit_file', 'multi_edit', 'notebook_edit', 'write_file', 'create_directory', 'delete_path', 'git_commit', 'git_branch', 'git_sync', 'run_command',
+  'check_problems', 'open_application', 'open_url', 'control_application', 'browser', 'remember',
+]);
+
+const ROMAN_HINGLISH_NUDGE =
+  'The user wrote in Roman-letter Hinglish, so reply in Roman letters only (no Devanagari script). Rewrite your whole previous answer in Roman Hinglish, with the same content, and keep code and technical terms in English.';
+
+/** A Hinglish message typed in Roman letters ("ye function kya karta hai?"). */
+export function isRomanHinglish(text: string): boolean {
+  if (/[\u0900-\u097F]/u.test(text)) return false;
+  const words = text.toLowerCase().match(/[a-z]+/gu) ?? [];
+  const hindi = words.filter(word => /^(?:hai|hain|kya|kyu|kyun|kaise|kaha|kahan|karo|kar|karta|karti|karte|mein|mai|ka|ki|ke|ko|se|batao|bataiye|samjhao|samjha|nahi|nhi|aur|ye|yeh|wo|woh|kuch|bhi|toh|to|hota|hoti|abhi|accha|acha|dekho|chahiye|wala|wali)$/u.test(word)).length;
+  return hindi >= 2 && hindi / Math.max(words.length, 1) >= 0.15;
+}
+
+/** More than a fifth of the reply's letters are Devanagari. */
+export function isMostlyDevanagari(text: string): boolean {
+  const devanagari = (text.match(/[\u0900-\u097F]/gu) ?? []).length;
+  const latin = (text.replace(/```[\s\S]*?```|`[^`]*`/gu, '').match(/[A-Za-z]/gu) ?? []).length;
+  return devanagari > 20 && devanagari / (devanagari + latin) > 0.2;
+}
+
+const LOOK_IT_UP_NUDGE =
+  'This question needs current information, and your own knowledge is out of date. Do not answer from memory: look it up now with the right tool (software_version for the latest version of a library or tool, weather, currency_convert, current_time, news_headlines, or web_search then fetch_url), then answer from what it returns, in the language of the user\'s message.';
+
+const DO_NOT_ASK_NUDGE =
+  'Do not ask the user whether to fetch, read, or search: they already asked for the answer. Do it now (fetch_url the most relevant result, or search again with better words), then answer with the facts and the source link.';
+
+/** Questions whose answer changes over time: never answer them from the model's memory. */
+export function asksForCurrentInfo(prompt: string): boolean {
+  return /\b(?:latest|newest|recent(?:ly)?|today|tonight|right now|this (?:week|month|year)|current (?:version|price|rate|news|time|weather|score)|price|prices|(?:exchange|interest|gold|silver|petrol|diesel|dollar|share|stock) rates?|version|(?:live|match|cricket) score|weather|forecast|news|aaj|abhi ka|kal ka|mausam|daam|bhav|keemat)\b/iu.test(prompt);
+}
+
+/** "Would you like me to fetch/read/check…?" after the user already asked for the answer. */
+export function offersToLookItUp(text: string): boolean {
+  const tail = text.trim().split(/\n+/u).slice(-3).join(' ');
+  if (/chrome|browser/iu.test(tail)) return false; // Offering the visible browser is intended; it needs the user's go-ahead.
+  return /\b(?:would you like me to|do you want me to|shall i|should i|i can (?:also )?(?:attempt to |try to )?|if you(?:'d| would)? like,? i can|let me know if you(?:'d| would)? like me to)\s*(?:fetch|read|check|look|search|get|find|open the (?:article|page|link))/iu.test(tail)
+    || /\b(?:kya main|main aapke liye)\b.{0,40}\b(?:fetch|padh|check|search|dhoondh)/iu.test(tail);
+}
 
 const USE_THE_WEB_NUDGE =
   'You do have web access without the browser: call web_search (or news_headlines for news, fetch_url for a known page) now, then answer the user\'s question from what you find. Do not repeat earlier errors. Reply in the language of the user\'s message.';
@@ -262,20 +376,22 @@ export function claimsNoWebAccess(text: string): boolean {
     /Allow JavaScript from Apple Events|JavaScript (?:ko )?enable|enable JavaScript/iu.test(text);
 }
 
-/** Tools that open or drive the user's browser; offered only when the user asks for that. */
+/** Tools that open or drive the user's browser; refused unless the user asks for that (they stay listed so the cached prompt matches). */
 const BROWSER_TOOLS = new Set(['browser', 'open_url']);
 
 /**
- * Whether the user asked to use, open, show, or act in the browser ("Chrome
- * mein dekho", "YouTube kholo", "jo khula hai padho", "scroll karo"). A plain
- * question ("trending song kya hai?") is answered in the background instead,
- * without touching the user's browser.
+ * Whether the user asked to use, open, show, search, or act in the browser
+ * ("Chrome mein dekho", "YouTube kholo", "google karo", "jo khula hai padho",
+ * "scroll karo"). A plain question ("trending song kya hai?") is answered in
+ * the background instead, without touching the user's browser.
  */
 export function asksForBrowser(prompt: string): boolean {
   const text = prompt.toLowerCase();
   return /\b(?:chrome|browser|safari|tab|tabs|website|site)\b/u.test(text) ||
-    /\b(?:open|show me|show|visit|go to|navigate|play|scroll|click)\b/u.test(text) ||
-    /\b(?:kholo|khol do|kholiye|kholna|dikhao|dikha do|dikhaiye|chalao|chala do|bajao|baja do|scroll|click|khula|khuli|khule)\b/u.test(text) ||
+    /\b(?:open|show me|show|visit|go to|navigate|play|scroll|click|browse)\b/u.test(text) ||
+    // "google karo", "search for X", "google pe dekho": a search the user wants done in the browser.
+    /\b(?:google|search)\s+(?:karo|kar do|kardo|kar|kijiye|for|it|this|up|pe|par|mein|me)\b/u.test(text) ||
+    /\b(?:kholo|khol do|kholiye|kholna|dikhao|dikha do|dikhaiye|chalao|chala do|bajao|baja do|scroll|click|khula|khuli|khule|dhoondo|dhundo|dhundho|dhoondho|khojo)\b/u.test(text) ||
     /(?:खोलो|खोल दो|दिखाओ|चलाओ|बजाओ|खुला|खुली)/u.test(text);
 }
 
@@ -389,21 +505,136 @@ export async function runAgent(
   }
 }
 
-/** The system prompt and tools a request gets. primeAgent must build exactly the same for a new chat. */
+const EDIT_TOOLS = new Set(['edit_file', 'multi_edit', 'write_file', 'notebook_edit']);
+
+/** Run the project's afterEdit hook via run_command (approval and "always allow" apply) and report briefly. */
+async function runAfterEditHook(path: string, tools: ToolExecutor, signal: AbortSignal, context: Parameters<ToolExecutor['execute']>[3]): Promise<Record<string, unknown> | undefined> {
+  const found = await hooksFor(path);
+  const command = found?.hooks.afterEdit;
+  if (!found || !command) return undefined;
+  try {
+    const result = await tools.execute('run_command', { command, cwd: found.root }, signal, context);
+    if (!isRecord(result) || result.status !== 'completed') return { command, status: 'not run (declined)' };
+    return {
+      command,
+      exitCode: result.exitCode,
+      ...(result.exitCode === 0 ? {} : { output: String(result.output ?? '').slice(-3_000), note: 'The project hook failed after this edit: fix what it reports.' }),
+    };
+  } catch {
+    return { command, status: 'could not run' };
+  }
+}
+
+/** Tools the explore helper may use: looking only. */
+export const EXPLORE_TOOLS: ReadonlySet<string> = new Set([
+  'list_directory', 'directory_tree', 'find_files', 'search_text', 'read_file', 'git_info', 'current_time',
+]);
+
+const EXPLORE_BRIEF = 'You are a read-only research helper for another assistant. Answer the task below by searching and reading files yourself (find_files, search_text, read_file, directory_tree, git_info). Do not change anything. Finish with a compact report: the answer, then the key places as `path:line` with one line each on what is there. No greetings.';
+
+/**
+ * Run a read-only helper on a self-contained question, in its own context,
+ * and return its report. Used by the explore tool so broad searches do not
+ * fill the main conversation.
+ */
+export async function runExplorer(
+  task: string,
+  signal: AbortSignal,
+  options: Pick<AgentOptions, 'provider' | 'tools' | 'config' | 'logger' | 'persona' | 'environment' | 'onToolActivity'>,
+): Promise<string> {
+  const config = { ...options.config, maxAgentIterations: Math.min(options.config.maxAgentIterations, 16), maxToolCalls: Math.min(options.config.maxToolCalls, 30) };
+  const report = await runAgent(`${EXPLORE_BRIEF}\n\nTask: ${task}`, signal, {
+    provider: options.provider,
+    tools: options.tools,
+    config,
+    session: new Session(),
+    logger: options.logger,
+    allowedTools: EXPLORE_TOOLS,
+    ...(options.persona ? { persona: options.persona } : {}),
+    ...(options.environment ? { environment: options.environment } : {}),
+    ...(options.onToolActivity ? { onToolActivity: activity => options.onToolActivity?.({ ...activity, label: `Explorer: ${activity.label}` }) } : {}),
+  });
+  return stripAppFooters(report).slice(0, 8_000);
+}
+
+/** Summaries of early turns, per session and cut point, so later requests in the app reuse them. */
+const summaryCache = new Map<string, string>();
+
+const SUMMARY_REQUEST = 'Before continuing, summarise the conversation below for yourself, because its full text will no longer fit. Write at most 15 short bullet points in English: what the user asked for, decisions and preferences, the projects, files, and commands involved, what was changed or found, and anything still open. Do not call tools. Reply with the bullet points only.';
+
+async function summarizeEarlierTurns(
+  session: Session,
+  budgetChars: number,
+  system: string,
+  tools: readonly ModelToolDefinition[],
+  provider: ModelProvider,
+  config: AppConfig,
+  signal: AbortSignal,
+): Promise<{ readonly cut: number; readonly message: SessionMessage } | undefined> {
+  const messages = session.messages();
+  const cut = summaryCut(messages, budgetChars);
+  if (cut === 0) return undefined;
+  const key = `${session.id}:${cut}`;
+  let text = summaryCache.get(key);
+  if (text === undefined) {
+    try {
+      // Same system prompt and tools as the real request, so Ollama's cached prefix stays valid.
+      const raw = await runBounded(
+        providerSignal => provider.complete(
+          [{ role: 'user', content: `${SUMMARY_REQUEST}\n\n${transcriptForSummary(messages.slice(0, cut))}` }],
+          providerSignal,
+          tools,
+          undefined,
+          system,
+        ),
+        Math.min(config.requestTimeoutMs, 120_000),
+        signal,
+      );
+      const response = parseProviderResponse(raw, config.maxResponseChars);
+      text = response.kind === 'final' ? response.text.trim().slice(0, 4_000) : '';
+    } catch (error) {
+      if (error instanceof OperationStoppedError && error.reason === 'cancelled') throw new AgentError('Operation cancelled.', 'cancelled');
+      text = '';
+    }
+    if (text) {
+      summaryCache.set(key, text);
+      if (summaryCache.size > 50) summaryCache.delete(summaryCache.keys().next().value as string);
+    }
+  }
+  if (!text) return undefined;
+  return {
+    cut,
+    message: { role: 'user', content: `[Summary of the earlier part of this conversation, written by you because the full text no longer fits]\n${text}` },
+  };
+}
+
+/** How many recent turns the project's instructions stay in view before they are sent again. */
+const INSTRUCTIONS_RECENT_TURNS = 8;
+
+/**
+ * The system prompt and tools a request gets, plus this turn's context. The
+ * system prompt and tool list depend only on the model, the persona, and the
+ * registered tools, never on the request: primeAgent builds exactly the same
+ * for a new chat, and Ollama's cached copy stays valid for the whole
+ * conversation. Everything that changes per turn goes into `context`.
+ */
 async function prepareTurn(
   prompt: string,
   signal: AbortSignal,
   options: Pick<AgentOptions, 'provider' | 'tools' | 'config' | 'session' | 'persona' | 'memory' | 'environment'>,
-): Promise<{ readonly toolCapable: boolean; readonly modelTools: readonly ModelToolDefinition[]; readonly system: string }> {
+): Promise<{
+  readonly toolCapable: boolean;
+  readonly modelTools: readonly ModelToolDefinition[];
+  readonly system: string;
+  readonly context: string;
+}> {
   // Models without tool support still chat; they are told what they cannot do.
   const toolCapable = await checkToolSupport(options.provider, options.config, signal);
-  const readOnlyRequest = forbidsChanges(prompt);
-  const browserAllowed = asksForBrowser(prompt);
-  const modelTools = (toolCapable ? options.tools.modelTools() : [])
-    .filter(tool => !readOnlyRequest || !FILE_CHANGE_TOOLS.has(tool.id))
-    // The user's browser is touched only when they ask for it.
-    .filter(tool => browserAllowed || !BROWSER_TOOLS.has(tool.id));
-  const detected = options.environment ?? detectEnvironment(options.session.messages());
+  // Every request sends the same tools; the loop refuses the ones this request may not use.
+  const modelTools = toolCapable ? options.tools.modelTools() : [];
+  const history = options.session.messages();
+  const detected = options.environment ??
+    detectEnvironment(prompt === '' ? history : [...history, { role: 'user', content: prompt }]);
   const memories = options.memory?.relevant(detected.activeProject) ?? [];
   const environment = memories.length > 0
     ? { ...detected, memories: memories.map(entry => ({ text: entry.text, ...(entry.project ? { project: entry.project } : {}) })) }
@@ -412,13 +643,21 @@ async function prepareTurn(
     chatOnly: !toolCapable,
     ...(options.persona ? { persona: options.persona } : {}),
   });
-  return { toolCapable, modelTools, system };
+  // Project instructions are long: send them once per project, and again once they left the recent turns.
+  const project = detected.activeProject;
+  const includeInstructions = project !== undefined && !history
+    .filter(message => message.role === 'user')
+    .slice(-INSTRUCTIONS_RECENT_TURNS)
+    .some(message => message.role === 'user' && carriesProjectInstructions(message.context, project));
+  const context = buildTurnContext(environment, { includeInstructions, readOnly: forbidsChanges(prompt) });
+  return { toolCapable, modelTools, system, context };
 }
 
 /**
  * Have the model read the system prompt and tool list of a new chat ahead of
- * time. That part is ~4,000 tokens and takes ~25 s on a 14B model; Ollama
- * keeps what it read, so the user's first message then starts at once.
+ * time. That part is ~8,000 tokens and takes ~45 s on a 14B model; Ollama
+ * keeps what it read, so the user's first message then starts at once, and
+ * every later turn too, because that part never changes (see prepareTurn).
  */
 export async function primeAgent(
   signal: AbortSignal,
@@ -440,11 +679,15 @@ async function runAgentTask(
     throw new AgentError('Request is empty or exceeds the configured input limit.', 'invalid-request');
   }
   if (signal.aborted) throw new AgentError('Operation cancelled.', 'cancelled');
-  session.add({ role: 'user', content: prompt });
+  // "/review", "/fix", "/test", "/commit", "/explain", or the project's own commands.
+  const typed = prompt;
+  const project = (options.environment ?? detectEnvironment([...session.messages(), { role: 'user', content: typed }])).activeProject;
+  prompt = (await expandSlashCommand(typed, project)).prompt;
   const start = Date.now();
   task.transition('planning');
 
-  const { toolCapable, modelTools, system } = await prepareTurn(prompt, signal, options);
+  const { toolCapable, modelTools, system, context } = await prepareTurn(prompt, signal, options);
+  session.add({ role: 'user', content: prompt, context });
   const readOnlyRequest = forbidsChanges(prompt);
   const browserAllowed = asksForBrowser(prompt);
   const fixedChars = system.length + JSON.stringify(modelTools).length;
@@ -455,6 +698,8 @@ async function runAgentTask(
 
   const actions: VerifiedAction[] = [];
   const callCounts = new Map<string, number>();
+  /** Signature → error message of calls that failed, so an identical retry is refused with advice. */
+  const failedCalls = new Map<string, string>();
   let toolCalls = 0;
   let malformedRetries = 0;
   let continuationNudges = 0;
@@ -462,6 +707,9 @@ async function runAgentTask(
   let attemptedEdit = false;
   let usedWebTool = false;
   const links = new LinkAliases();
+  const images = options.images ?? [];
+  // A long conversation keeps its early turns as a summary instead of losing them.
+  const summary = await summarizeEarlierTurns(session, budgetChars, system, modelTools, options.provider, config, signal);
   const canEdit = modelTools.some(tool => tool.id === 'edit_file' || tool.id === 'write_file');
   let streamedSomething = false;
   const onText = options.onText;
@@ -488,24 +736,36 @@ async function runAgentTask(
     return response;
   };
 
+  if (images.length > 0 && options.provider.supportsVision && !await options.provider.supportsVision().catch(() => true)) {
+    return finish('The selected model cannot see pictures. Choose a model marked **Vision** in the Models panel (for example `qwen2.5vl:7b` or `gemma3:12b`), then send the picture again.', 0, true);
+  }
+
   for (let iteration = 1; iteration <= config.maxAgentIterations; iteration += 1) {
     if (signal.aborted) throw new AgentError('Operation cancelled.', 'cancelled');
-    const fitted = fitMessagesToBudget(session.messages(), budgetChars).map(message =>
+    const visible = summary ? [summary.message, ...session.messages().slice(summary.cut)] : session.messages();
+    const fitted = fitMessagesToBudget(visible, budgetChars).map(message =>
       message.role === 'assistant' && message.kind !== 'tool-call'
         ? { ...message, content: links.shorten(stripAppFooters(message.content)) }
         // The model sees long URLs as short aliases it can copy without mistakes.
         : message.role === 'tool' ? { ...message, content: links.shorten(message.content) } : message);
     // A spoken request carries its note in the message, keeping the system prompt cacheable.
-    let spokenIndex = -1;
-    if (options.voice) {
+    // Notes and pictures travel with this request's message, keeping the system prompt cacheable.
+    const notes = [
+      ...(options.voice ? [spokenRequestNote(options.persona)] : []),
+      ...(options.planOnly ? [PLAN_MODE_NOTE] : []),
+    ];
+    let promptIndex = -1;
+    if (notes.length > 0 || images.length > 0) {
       for (let index = fitted.length - 1; index >= 0; index -= 1) {
         const message = fitted[index];
-        if (message?.role === 'user' && message.content === prompt) { spokenIndex = index; break; }
+        if (message?.role === 'user' && message.content === prompt) { promptIndex = index; break; }
       }
     }
-    const withNote = spokenIndex < 0
+    const withNote = promptIndex < 0
       ? fitted
-      : fitted.map((message, index) => index === spokenIndex ? { ...message, content: `${message.content}\n\n${spokenRequestNote(options.persona)}` } : message);
+      : fitted.map((message, index) => index === promptIndex && message.role === 'user'
+        ? { ...message, content: [message.content, ...notes].join('\n\n'), ...(images.length > 0 ? { images } : {}) }
+        : message);
     const messages = pendingNudge
       ? [...withNote, { role: 'user' as const, content: pendingNudge }]
       : withNote;
@@ -557,7 +817,8 @@ async function runAgentTask(
     if (response.kind === 'final') {
       // Local models sometimes describe their next step and stop. Nudge them
       // (at most twice) to actually continue instead of ending the task early.
-      const canNudge = continuationNudges < 2 &&
+      // A plan is the expected answer in plan mode: no "keep going" nudges.
+      const canNudge = !options.planOnly && continuationNudges < 2 &&
         iteration < config.maxAgentIterations &&
         toolCalls < config.maxToolCalls;
       const unappliedChange = canEdit &&
@@ -566,11 +827,23 @@ async function runAgentTask(
         /```[\s\S]*\n[\s\S]*```/u.test(response.text);
       const unfinishedPlan = isUnfinishedPlan(response.text);
       // "I can't access real-time data" while web tools exist and none was tried.
-      const gaveUpOnWeb = !usedWebTool && modelTools.some(tool => WEB_TOOLS.has(tool.id)) && claimsNoWebAccess(response.text);
-      if (canNudge && (unappliedChange || unfinishedPlan || gaveUpOnWeb || announcesNextStep(response.text))) {
+      const hasWebTools = modelTools.some(tool => WEB_TOOLS.has(tool.id));
+      const gaveUpOnWeb = !usedWebTool && hasWebTools && claimsNoWebAccess(response.text);
+      // "Latest React Native version?" answered without a single tool call: from stale memory.
+      const answeredFromMemory = toolCalls === 0 && hasWebTools && asksForCurrentInfo(prompt);
+      const askedToLookItUp = hasWebTools && offersToLookItUp(response.text);
+      // Spoken replies may use the voice's script; typed Roman Hinglish gets Roman letters back.
+      const wrongScript = !options.voice && isRomanHinglish(typed) && isMostlyDevanagari(response.text);
+      if (canNudge && (unappliedChange || unfinishedPlan || gaveUpOnWeb || answeredFromMemory || askedToLookItUp || wrongScript || announcesNextStep(response.text))) {
         continuationNudges += 1;
         session.add({ role: 'assistant', content: response.text });
-        pendingNudge = unappliedChange ? APPLY_CHANGE_NUDGE : unfinishedPlan ? UNFINISHED_PLAN_NUDGE : gaveUpOnWeb ? USE_THE_WEB_NUDGE : CONTINUE_NUDGE;
+        pendingNudge = unappliedChange ? APPLY_CHANGE_NUDGE
+          : unfinishedPlan ? UNFINISHED_PLAN_NUDGE
+          : gaveUpOnWeb ? USE_THE_WEB_NUDGE
+          : answeredFromMemory ? LOOK_IT_UP_NUDGE
+          : askedToLookItUp ? DO_NOT_ASK_NUDGE
+          : wrongScript ? ROMAN_HINGLISH_NUDGE
+          : CONTINUE_NUDGE;
         continue;
       }
       return finish(response.text, iteration);
@@ -607,7 +880,22 @@ async function runAgentTask(
         argumentKeys: Object.keys(call.arguments).sort(),
       });
 
-      if (attempt > 2 && !MUTATING_TOOLS.has(call.toolId)) {
+      // Repeating a call that already failed cannot succeed (same old_text, same file);
+      // small models loop on it. Point them back to the file instead.
+      const earlierFailure = attempt > 1 ? failedCalls.get(signature) : undefined;
+      if (earlierFailure !== undefined) {
+        session.add({
+          role: 'tool',
+          toolId: call.toolId,
+          content: JSON.stringify({
+            ok: false,
+            error: `You already made this exact call and it failed: ${clip(earlierFailure, 200)} Do not repeat it. Read the file again with read_file, copy old_text exactly from that fresh output (the file may have changed since your last edit), and make a different change — or explain what is blocking you.`,
+          }),
+        });
+        continue;
+      }
+
+      if (attempt > 2 && !MUTATING_TOOLS.has(call.toolId) && !call.toolId.startsWith('mcp_')) {
         session.add({
           role: 'tool',
           toolId: call.toolId,
@@ -615,6 +903,24 @@ async function runAgentTask(
             ok: false,
             error: 'You already made this exact call. Use the earlier result above, or try a different approach.',
           }),
+        });
+        continue;
+      }
+
+      if (options.allowedTools && !options.allowedTools.has(call.toolId)) {
+        session.add({
+          role: 'tool',
+          toolId: call.toolId,
+          content: JSON.stringify({ ok: false, error: `You are a read-only helper: ${call.toolId} is not available to you. Use only ${[...options.allowedTools].join(', ')}, then report what you found.` }),
+        });
+        continue;
+      }
+
+      if (options.planOnly && PLAN_MODE_BLOCKED.has(call.toolId)) {
+        session.add({
+          role: 'tool',
+          toolId: call.toolId,
+          content: JSON.stringify({ ok: false, error: 'Plan mode: nothing may be changed, run, or opened yet. Finish investigating with read-only tools, then reply with the plan and wait for the user to say go ahead.' }),
         });
         continue;
       }
@@ -637,7 +943,7 @@ async function runAgentTask(
         continue;
       }
 
-      if (call.toolId === 'edit_file' || call.toolId === 'write_file') attemptedEdit = true;
+      if (EDIT_TOOLS.has(call.toolId)) attemptedEdit = true;
       if (WEB_TOOLS.has(call.toolId)) usedWebTool = true;
       options.onToolActivity?.({ id: toolCallId, toolId: call.toolId, label, status: 'running' });
       logger.emit({ event: 'tool.invoked', ...context, toolId: call.toolId });
@@ -649,9 +955,13 @@ async function runAgentTask(
         const action = verifiedAction(call.toolId, call.arguments, result);
         if (action) actions.push(action);
         const rejected = isRecord(result) && result.status === 'rejected';
+        // The project's afterEdit hook (e.g. a linter) runs after each applied edit, through the usual approval.
+        const hook = isRecord(result) && result.status === 'applied' && EDIT_TOOLS.has(call.toolId) && typeof result.path === 'string'
+          ? await runAfterEditHook(result.path, tools, signal, context)
+          : undefined;
         const content = JSON.stringify(rejected
           ? { ...result, note: 'The user declined this action. Do not retry it unchanged; adapt or ask the user.' }
-          : result);
+          : hook && isRecord(result) ? { ...result, afterEditHook: hook } : result);
         session.add({ role: 'tool', toolId: call.toolId, content });
         options.onToolActivity?.({
           id: toolCallId,
@@ -669,6 +979,7 @@ async function runAgentTask(
           ? error.message
           : 'The tool failed unexpectedly; nothing is confirmed.';
         logger.emit({ event: 'tool.failed', ...context, toolId: call.toolId, code });
+        failedCalls.set(signature, message);
         // Invalid calls never reached the world, so they are not "actions"; the
         // model still sees the error and can correct the call.
         if (MUTATING_TOOLS.has(call.toolId) && !INVALID_CALL_CODES.has(code)) {

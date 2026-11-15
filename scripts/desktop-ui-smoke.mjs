@@ -1,4 +1,4 @@
-import { spawn } from 'node:child_process';
+import { execFileSync, spawn } from 'node:child_process';
 import { createServer } from 'node:http';
 import { mkdtempSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
@@ -260,6 +260,14 @@ try {
       getComputedStyle(bar).animationName === 'none'))()`),
     'side waveform bars stay still before voice listening starts',
   );
+  // Vyomara pauses animations while its window is in the background, and a
+  // test launched from a terminal starts behind it: bring the window forward.
+  try {
+    execFileSync('/usr/bin/osascript', ['-e', 'tell application id "com.github.Electron" to activate'], { timeout: 5_000 });
+    await delay(600);
+  } catch {
+    // Without Apple Events the motion checks below can fail on an unfocused window.
+  }
   const firstWaveformTransforms = await evaluate(`(() => {
     const orbit = document.querySelector('.welcome-card .voice-orbit');
     orbit.classList.add('voice-orbit-listening');

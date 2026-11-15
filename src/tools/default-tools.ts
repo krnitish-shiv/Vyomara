@@ -6,6 +6,14 @@ import { registerActionTools, registerWebTools } from './action-tools.ts';
 import type { ActionToolPorts } from './action-tools.ts';
 import { registerPlanTool } from './plan-tool.ts';
 import { registerMemoryTool } from './memory-tool.ts';
+import { registerUtilityTools } from './utility-tools.ts';
+import { registerGitTools } from './git-tools.ts';
+import { registerProblemsTool } from './problems-tool.ts';
+import { registerExploreTool, type ExplorePort } from './explore-tool.ts';
+import { registerMcpTools } from './mcp-tools.ts';
+import { registerSystemTool } from './system-tool.ts';
+import { registerVscodeTool } from './vscode-tool.ts';
+import { MAX_MODEL_TOOLS } from '../providers/provider.ts';
 import type { MemoryStore } from '../storage/memory-store.ts';
 
 export interface ToolRegistryOptions {
@@ -16,6 +24,8 @@ export interface ToolRegistryOptions {
   readonly actions?: ActionToolPorts;
   /** Enables remember: lasting facts for future conversations. */
   readonly memory?: MemoryStore;
+  /** Enables explore: a read-only helper agent; `run` is filled in once the request's provider exists. */
+  readonly explore?: ExplorePort;
 }
 
 export function createDefaultToolRegistry(
@@ -28,10 +38,21 @@ export function createDefaultToolRegistry(
   const includeFilesystemTools = options.includeFilesystemTools ?? config.filesystemAllowedRoots.length > 0;
   if (includeFilesystemTools) {
     registerFilesystemTools(registry, config, {}, options.fileOperationApproval);
+    registerGitTools(registry, config, options.actions);
+    registerProblemsTool(registry, config, options.actions);
+    if (options.explore) registerExploreTool(registry, options.explore);
   }
   if (options.actions) {
     registerActionTools(registry, config, options.actions);
     registerWebTools(registry, config, options.actions);
+    if (includeFilesystemTools) registerVscodeTool(registry, config, options.actions);
+    if (options.actions.system) registerSystemTool(registry, options.actions.system, options.actions.approval);
+  }
+  // Clock, calculator, units, dates, and Mac status always; weather, rates, and versions with web access.
+  registerUtilityTools(registry, options.actions);
+  // MCP tools last, in whatever room the tool limit leaves.
+  if (options.actions?.mcp) {
+    registerMcpTools(registry, options.actions.mcp, options.actions.approval, options.actions.mcpAllowed ?? new Set(), MAX_MODEL_TOOLS - registry.modelTools().length);
   }
   return registry;
 }

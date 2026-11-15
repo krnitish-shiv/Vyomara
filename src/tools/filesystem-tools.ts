@@ -1,5 +1,5 @@
 import { constants as fsConstants } from 'node:fs';
-import { lstat, open, opendir, realpath, stat } from 'node:fs/promises';
+import { lstat, open, opendir, readFile as readRawFile, realpath, stat } from 'node:fs/promises';
 import type { Dir, Dirent, Stats } from 'node:fs';
 import type { FileHandle } from 'node:fs/promises';
 import { isAbsolute, relative, resolve, sep } from 'node:path';
@@ -325,7 +325,7 @@ async function resolveAllowedPath(
     : matchedRoot.canonical;
   const suffix = relative(lexicalRoot, normalized);
   const root = matchedRoot.canonical;
-  const expectedTarget = resolve(root, suffix);
+  let expectedTarget = resolve(root, suffix);
   let actualTarget: string;
   try {
     actualTarget = await realpath(normalized);
@@ -339,7 +339,11 @@ async function resolveAllowedPath(
     throw new FilesystemToolError('Protected system and credential paths are not accessible.', 'permission-denied');
   }
   if (actualTarget !== expectedTarget) {
-    throw new FilesystemToolError('Symbolic links are not allowed in requested paths.', 'invalid-path');
+    // macOS volumes ignore case: "~/projects/app" is "~/Projects/app", not a link. Use the real spelling.
+    if (!sameIgnoringCase(actualTarget, expectedTarget)) {
+      throw new FilesystemToolError('Symbolic links are not allowed in requested paths.', 'invalid-path');
+    }
+    expectedTarget = actualTarget;
   }
 
   const segments = relative(root, expectedTarget).split(sep).filter(Boolean);
@@ -376,6 +380,10 @@ async function resolveAllowedPath(
     throw new FilesystemToolError('The requested path is not a directory.', 'invalid-path');
   }
   return { root, target: current, stats: currentStats };
+}
+
+function sameIgnoringCase(a: string, b: string): boolean {
+  return process.platform === 'darwin' && a.toLowerCase() === b.toLowerCase();
 }
 
 export async function resolveSafeFilesystemPath(
@@ -1149,6 +1157,44 @@ interface EditFileInput extends PathInput {
   readonly replace_all?: boolean;
 }
 
+interface NotebookInput extends PathInput {
+  readonly cell: number;
+  readonly source?: string;
+  readonly action?: string;
+  readonly cell_type?: string;
+}
+
+interface MultiEditInput extends PathInput {
+  readonly edits: string;
+}
+
+interface ParsedEdit {
+  readonly old_text: string;
+  readonly new_text: string;
+  readonly replace_all?: boolean;
+}
+
+function parseEdits(text: string): { readonly edits?: readonly ParsedEdit[]; readonly error?: string } {
+  let value: unknown;
+  try {
+    value = JSON.parse(text);
+  } catch {
+    return { error: 'edits must be a JSON array like [{"old_text": "a", "new_text": "b"}].' };
+  }
+  if (!Array.isArray(value) || value.length === 0 || value.length > 20) return { error: 'edits must be a JSON array of 1-20 edits.' };
+  for (const [index, edit] of value.entries()) {
+    const item = edit as Record<string, unknown> | null;
+    if (typeof item !== 'object' || item === null || typeof item.old_text !== 'string' || typeof item.new_text !== 'string') {
+      return { error: `Edit ${index + 1} needs old_text and new_text strings.` };
+    }
+    if (item.old_text === '') return { error: `Edit ${index + 1}: old_text must not be empty.` };
+    if (item.old_text === item.new_text) return { error: `Edit ${index + 1}: old_text and new_text are identical.` };
+    if (item.replace_all !== undefined && typeof item.replace_all !== 'boolean') return { error: `Edit ${index + 1}: replace_all must be true or false.` };
+    if (BINARY_CONTROL_CHARACTERS.test(item.new_text)) return { error: `Edit ${index + 1}: new_text must be text without binary control characters.` };
+  }
+  return { edits: value as ParsedEdit[] };
+}
+
 function isListOutput(value: unknown): value is ListOutput {
   return isRecord(value) &&
     Array.isArray(value.entries) &&
@@ -1444,6 +1490,97 @@ export function registerFilesystemTools(
         },
       };
       const result = await approval.request(request, signal);
+      return { ...result, operation: 'edit-file', path: input.path };
+    },
+  }));
+
+  // Several edits to one file in one review: fewer steps, and the user sees one diff.
+  const multiEdit = defineTool<MultiEditInput, OperationOutput>({
+    id: 'multi_edit',
+    effect: 'propose',
+    description: 'Make several edits to ONE existing file at once, reviewed as a single diff. `edits` is a JSON array of {"old_text": "...", "new_text": "...", "replace_all": false}; they are applied in order, each to the result of the previous one, and each old_text must match exactly once (copy it exactly from read_file). Prefer this over several edit_file calls on the same file.',
+    parameters: {
+      type: 'object',
+      properties: {
+        path: { ...PATH_PROPERTY, description: 'Absolute path of the existing file.' },
+        edits: { type: 'string', description: 'JSON array of {"old_text","new_text","replace_all"?} objects, 1-20 edits.', maxLength: contentMaximum },
+      },
+      required: ['path', 'edits'],
+      additionalProperties: false,
+    },
+    extraCheck: input => parseEdits(input.edits).error,
+    validateOutput: isOperationOutput,
+    async run(input, signal) {
+      const { edits } = parseEdits(input.edits);
+      const result = await approval.request({
+        operation: 'edit-file',
+        path: input.path,
+        replacements: (edits ?? []).map(edit => ({ find: edit.old_text, replace: edit.new_text, ...(edit.replace_all === true ? { all: true as const } : {}) })),
+      }, signal);
+      return { ...result, operation: 'edit-file', path: input.path };
+    },
+  });
+  // Models often send the edits as a real JSON array; accept that too.
+  const normalizeMultiEdit = multiEdit.normalizeInput;
+  registry.register({
+    ...multiEdit,
+    normalizeInput: value => {
+      const record = typeof value === 'object' && value !== null && !Array.isArray(value) ? value as Record<string, unknown> : undefined;
+      const withText = record && Array.isArray(record.edits) ? { ...record, edits: JSON.stringify(record.edits) } : value;
+      return normalizeMultiEdit ? normalizeMultiEdit(withText) : withText;
+    },
+  });
+
+  // Jupyter notebooks are JSON; edit one cell and review the whole notebook as a diff.
+  registry.register(defineTool<NotebookInput, OperationOutput>({
+    id: 'notebook_edit',
+    effect: 'propose',
+    description: 'Edit a Jupyter notebook (.ipynb) cell: action "replace" (default) sets cell `cell` (0-based) to `source`, "insert" adds a new cell before index `cell` (use the cell count to append), "delete" removes it. cell_type is "code" (default) or "markdown". Read the notebook with read_file first. The user reviews the change.',
+    parameters: {
+      type: 'object',
+      properties: {
+        path: { ...PATH_PROPERTY, description: 'Absolute path of the .ipynb file.' },
+        cell: { type: 'integer', description: '0-based cell index.', minimum: 0, maximum: 10_000 },
+        source: { type: 'string', description: 'New cell source (not needed for delete).', maxLength: contentMaximum },
+        action: { type: 'string', description: '"replace" (default), "insert", or "delete".', maxLength: 7 },
+        cell_type: { type: 'string', description: '"code" (default) or "markdown".', maxLength: 8 },
+      },
+      required: ['path', 'cell'],
+      additionalProperties: false,
+    },
+    extraCheck: input => !input.path.endsWith('.ipynb')
+      ? 'notebook_edit only edits .ipynb files; use edit_file for other files.'
+      : input.action !== undefined && !['replace', 'insert', 'delete'].includes(input.action)
+        ? 'action must be replace, insert, or delete.'
+        : input.cell_type !== undefined && input.cell_type !== 'code' && input.cell_type !== 'markdown'
+          ? 'cell_type must be code or markdown.'
+          : (input.action ?? 'replace') !== 'delete' && input.source === undefined
+            ? 'source is required to replace or insert a cell.'
+            : undefined,
+    validateOutput: isOperationOutput,
+    async run(input, signal) {
+      const file = (await resolveSafeFilesystemPath(input.path, config, 'file', signal)).target;
+      let notebook: { cells?: unknown[]; [key: string]: unknown };
+      try {
+        notebook = JSON.parse(await readRawFile(file, 'utf8')) as typeof notebook;
+      } catch {
+        throw new ToolFailure('The notebook is not valid JSON.', 'tool-failed');
+      }
+      const cells = Array.isArray(notebook.cells) ? [...notebook.cells] : undefined;
+      if (!cells) throw new ToolFailure('The notebook has no cells list.', 'tool-failed');
+      const action = input.action ?? 'replace';
+      const limit = action === 'insert' ? cells.length : cells.length - 1;
+      if (input.cell > limit) throw new ToolFailure(`cell must be between 0 and ${limit} (the notebook has ${cells.length} cells).`, 'not-found');
+      const lines = (input.source ?? '').split(/(?<=\n)/u);
+      const type = input.cell_type ?? (action === 'replace' && typeof (cells[input.cell] as { cell_type?: unknown })?.cell_type === 'string' ? (cells[input.cell] as { cell_type: string }).cell_type : 'code');
+      const fresh = type === 'markdown'
+        ? { cell_type: 'markdown', metadata: {}, source: lines }
+        : { cell_type: 'code', execution_count: null, metadata: {}, outputs: [], source: lines };
+      if (action === 'delete') cells.splice(input.cell, 1);
+      else if (action === 'insert') cells.splice(input.cell, 0, fresh);
+      else cells[input.cell] = { ...(cells[input.cell] as object), ...fresh, ...(type === 'code' ? { outputs: [], execution_count: null } : {}) };
+      const content = `${JSON.stringify({ ...notebook, cells }, null, 1)}\n`;
+      const result = await approval.request({ operation: 'edit-file', path: input.path, content }, signal);
       return { ...result, operation: 'edit-file', path: input.path };
     },
   }));
