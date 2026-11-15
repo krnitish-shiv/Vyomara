@@ -698,6 +698,8 @@ async function runAgentTask(
 
   const actions: VerifiedAction[] = [];
   const callCounts = new Map<string, number>();
+  /** Signature → error message of calls that failed, so an identical retry is refused with advice. */
+  const failedCalls = new Map<string, string>();
   let toolCalls = 0;
   let malformedRetries = 0;
   let continuationNudges = 0;
@@ -878,6 +880,21 @@ async function runAgentTask(
         argumentKeys: Object.keys(call.arguments).sort(),
       });
 
+      // Repeating a call that already failed cannot succeed (same old_text, same file);
+      // small models loop on it. Point them back to the file instead.
+      const earlierFailure = attempt > 1 ? failedCalls.get(signature) : undefined;
+      if (earlierFailure !== undefined) {
+        session.add({
+          role: 'tool',
+          toolId: call.toolId,
+          content: JSON.stringify({
+            ok: false,
+            error: `You already made this exact call and it failed: ${clip(earlierFailure, 200)} Do not repeat it. Read the file again with read_file, copy old_text exactly from that fresh output (the file may have changed since your last edit), and make a different change — or explain what is blocking you.`,
+          }),
+        });
+        continue;
+      }
+
       if (attempt > 2 && !MUTATING_TOOLS.has(call.toolId) && !call.toolId.startsWith('mcp_')) {
         session.add({
           role: 'tool',
@@ -962,6 +979,7 @@ async function runAgentTask(
           ? error.message
           : 'The tool failed unexpectedly; nothing is confirmed.';
         logger.emit({ event: 'tool.failed', ...context, toolId: call.toolId, code });
+        failedCalls.set(signature, message);
         // Invalid calls never reached the world, so they are not "actions"; the
         // model still sees the error and can correct the call.
         if (MUTATING_TOOLS.has(call.toolId) && !INVALID_CALL_CODES.has(code)) {

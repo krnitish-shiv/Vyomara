@@ -1039,3 +1039,21 @@ test('the system prompt and tools stay identical across turns; per-turn facts tr
   assert.match(stored[0]?.context ?? '', /^\[Context from the app, not from the user\]/);
   assert.equal(stored[0]?.content, 'is the cart total right? do not change anything yet');
 });
+
+test('an edit that already failed is not run again unchanged; the model is sent back to the file', async t => {
+  const h = await harness(t);
+  const missing = join(h.root, 'src', 'nope.js');
+  const edit = { toolId: 'edit_file', arguments: { path: missing, old_text: 'a', new_text: 'b' } };
+  const seen: SessionMessage[][] = [];
+  const provider = scriptedProvider([
+    () => ({ kind: 'tool-calls', calls: [edit] }),
+    () => ({ kind: 'tool-calls', calls: [edit] }),
+    () => ({ kind: 'final', text: 'Could not edit.' }),
+  ], seen);
+  const session = new Session();
+  await runAgent('edit nope.js', AbortSignal.timeout(5_000), { provider, tools: h.executor, config: h.config, session, logger: createLogger(() => {}), environment });
+  const results = session.messages().filter(message => message.role === 'tool').map(message => JSON.parse(message.content) as { error: unknown });
+  assert.equal(results.length, 2);
+  assert.doesNotMatch(JSON.stringify(results[0]?.error), /already made this exact call/u);
+  assert.match(JSON.stringify(results[1]?.error), /already made this exact call and it failed[\s\S]*read_file/u);
+});
