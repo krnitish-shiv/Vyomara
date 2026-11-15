@@ -91,6 +91,8 @@ export interface RequestOptions {
   readonly persona?: PersonaId;
   /** User-written character for the persona, from the Character panel. */
   readonly character?: string;
+  /** Spoken replies go to the natural voice, which reads Devanagari. */
+  readonly devanagariVoice?: boolean;
   readonly includeFilesystemTools?: boolean;
   readonly fileOperationApproval?: FileOperationApprovalPort;
   readonly actions?: ActionToolPorts;
@@ -187,6 +189,7 @@ export async function runRequest(
         ...(options.images && options.images.length > 0 ? { images: options.images } : {}),
         ...(options.persona ? { persona: options.persona } : {}),
         ...(options.character ? { character: options.character } : {}),
+        ...(options.devanagariVoice ? { devanagariVoice: true } : {}),
         memory,
       });
     } catch (error) {

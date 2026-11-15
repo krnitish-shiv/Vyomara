@@ -1,5 +1,7 @@
 import { spawn } from 'node:child_process';
+import { rm } from 'node:fs/promises';
 import { romanForSpeech } from '../shared/voice-intents.ts';
+import { textForNatural, type NaturalSpeechPort } from './natural-voice.ts';
 
 export type MacSpeechResult =
   | { readonly status: 'completed' }
@@ -104,13 +106,31 @@ export class MacSpeechRunner {
   /** Replies still choosing their voice. */
   #starting = 0;
 
-  constructor(spawnProcess: SpawnSpeechProcess = spawnMacSpeechProcess, platform: NodeJS.Platform = process.platform) {
+  readonly #natural: NaturalSpeechPort | undefined;
+  #synthesis: AbortController | undefined;
+
+  constructor(
+    spawnProcess: SpawnSpeechProcess = spawnMacSpeechProcess,
+    platform: NodeJS.Platform = process.platform,
+    natural?: NaturalSpeechPort,
+  ) {
     this.#spawnProcess = spawnProcess;
     this.#platform = platform;
+    this.#natural = natural;
+  }
+
+  /** Replies are read in the natural voice (Kokoro) when it is installed. */
+  get naturalVoiceReady(): boolean {
+    return this.#natural?.ready === true;
   }
 
   async speak(text: unknown, gender: 'male' | 'female' = 'male'): Promise<MacSpeechResult> {
     const stops = this.#stopCount;
+    if (typeof text === 'string' && this.#platform === 'darwin' && this.#natural?.ready) {
+      const natural = await this.#speakNatural(text, gender, stops);
+      if (natural) return natural;
+      // The natural voice failed: fall through to the system voice, so a reply is never silent.
+    }
     this.#starting += 1;
     let voice: string | undefined;
     try {
@@ -126,6 +146,32 @@ export class MacSpeechRunner {
     return this.#speak(spoken, voice);
   }
 
+  /** Synthesize with the natural voice and play the file; undefined when it could not (use the system voice). */
+  async #speakNatural(text: string, gender: 'male' | 'female', stops: number): Promise<MacSpeechResult | undefined> {
+    const spoken = textForNatural(text);
+    if (spoken.trim() !== spoken || spoken.length === 0 || spoken.length > maximumSpeechChars) return undefined;
+    const controller = new AbortController();
+    this.#synthesis = controller;
+    this.#starting += 1;
+    let file: string;
+    try {
+      file = await this.#natural!.synthesize(spoken, gender, controller.signal);
+    } catch {
+      return controller.signal.aborted ? { status: 'cancelled' } : undefined;
+    } finally {
+      this.#starting -= 1;
+      if (this.#synthesis === controller) this.#synthesis = undefined;
+    }
+    try {
+      if (stops !== this.#stopCount) return { status: 'cancelled' };
+      return await this.#run('/usr/bin/afplay', [file]);
+    } catch {
+      return undefined;
+    } finally {
+      void rm(file, { force: true });
+    }
+  }
+
   #speak(text: unknown, voice: string | undefined): Promise<MacSpeechResult> {
     if (this.#platform !== 'darwin') {
       return Promise.reject(new MacSpeechError('Local speech output is available only on macOS.'));
@@ -133,13 +179,17 @@ export class MacSpeechRunner {
     if (typeof text !== 'string' || text.trim() !== text || text.length === 0 || text.length > maximumSpeechChars) {
       return Promise.reject(new MacSpeechError(`Speech text must contain 1 to ${maximumSpeechChars} characters.`));
     }
+    return this.#run('/usr/bin/say', ['-r', '180', ...(voice === undefined ? [] : ['-v', voice]), '--', text]);
+  }
+
+  #run(executable: string, arguments_: readonly string[]): Promise<MacSpeechResult> {
     if (this.#activeChild) {
       return Promise.reject(new MacSpeechError('Speech output is already in progress.'));
     }
 
     let child: SpeechChild;
     try {
-      child = this.#spawnProcess('/usr/bin/say', ['-r', '180', ...(voice === undefined ? [] : ['-v', voice]), '--', text]);
+      child = this.#spawnProcess(executable, arguments_);
     } catch (error) {
       return Promise.reject(new MacSpeechError(error instanceof Error ? error.message : 'macOS speech could not be started.'));
     }
@@ -193,6 +243,7 @@ export class MacSpeechRunner {
 
   stop(): boolean {
     this.#stopCount += 1;
+    this.#synthesis?.abort();
     const child = this.#activeChild;
     if (!child) return this.#starting > 0;
     const stopped = child.kill('SIGTERM');

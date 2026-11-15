@@ -3,6 +3,21 @@
 All notable changes to Vyomara are listed here. Versions follow
 [Semantic Versioning](https://semver.org/).
 
+## [Unreleased]
+
+### Voice
+- Natural local voice (Kokoro): run `pnpm setup:voice` once; replies are then
+  read by a natural female (Vyomara) or male (Vyom) voice, including Hindi,
+  with the system voice as automatic fallback (ADR-0028).
+- Speech recognition now runs with voice-activity detection and non-speech
+  suppression, so noise no longer turns into invented words.
+
+### Assistants
+- Specialists Kavach, Yatra, Khoj, and Lipi beside Vyom and Vyomara
+  (`--agent` in the CLI); a per-assistant character stored for the prompt.
+- `screen_time`: per-app time recorded locally while the app runs, and a
+  gentle break reminder after three hours of continuous use.
+
 ## [2.0.0] — 2026-11-15
 
 Vyom now works like a full coding agent on your Mac: it keeps its prompt

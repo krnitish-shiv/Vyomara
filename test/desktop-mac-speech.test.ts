@@ -88,3 +88,57 @@ test('voice names with an added language are also known by their plain name', as
   assert.ok(names.has('Lekha'));
   assert.ok(names.has('Eddy'));
 });
+
+function naturalPort(synthesize: (text: string, gender: 'male' | 'female', signal: AbortSignal) => Promise<string>, ready = true) {
+  return { ready, synthesize };
+}
+
+test('the natural voice plays its file with afplay, names in Devanagari', async () => {
+  const calls: { executable: string; args: readonly string[] }[] = [];
+  const spoken: string[] = [];
+  const runner = new MacSpeechRunner((executable, args) => {
+    calls.push({ executable, args });
+    const child = new FakeSpeechChild();
+    queueMicrotask(() => child.emit('close', 0, null));
+    return child;
+  }, 'darwin', naturalPort(async (text, gender) => { spoken.push(`${gender}:${text}`); return '/tmp/vyomara-test-voice.wav'; }));
+  assert.equal(runner.naturalVoiceReady, true);
+  assert.deepEqual(await runner.speak('Hi, I am Vyom and Vyomara.', 'female'), { status: 'completed' });
+  assert.deepEqual(spoken, ['female:Hi, I am व्योम and व्योमारा.']);
+  assert.deepEqual(calls, [{ executable: '/usr/bin/afplay', args: ['/tmp/vyomara-test-voice.wav'] }]);
+});
+
+test('a failing natural voice falls back to the system voice; one that is not installed is not tried', async () => {
+  const calls: string[] = [];
+  const spawnProcess: SpawnSpeechProcess = executable => {
+    calls.push(executable);
+    const child = new FakeSpeechChild();
+    queueMicrotask(() => child.emit('close', 0, null));
+    return child;
+  };
+  const failing = new MacSpeechRunner(spawnProcess, 'darwin', naturalPort(async () => { throw new Error('sidecar died'); }));
+  assert.deepEqual(await failing.speak('Hello.'), { status: 'completed' });
+  assert.deepEqual(calls, ['/usr/bin/say']);
+
+  const synthesized: string[] = [];
+  const missing = new MacSpeechRunner(spawnProcess, 'darwin', naturalPort(async text => { synthesized.push(text); return '/tmp/x.wav'; }, false));
+  assert.equal(missing.naturalVoiceReady, false);
+  await missing.speak('Hello.');
+  assert.deepEqual(synthesized, []);
+});
+
+test('stopping while the natural voice is still synthesizing cancels the reply', async () => {
+  let seenSignal: AbortSignal | undefined;
+  const calls: string[] = [];
+  const runner = new MacSpeechRunner(executable => { calls.push(executable); return new FakeSpeechChild(); }, 'darwin',
+    naturalPort((_text, _gender, signal) => new Promise<string>((_resolve, reject) => {
+      seenSignal = signal;
+      signal.addEventListener('abort', () => reject(new Error('cancelled')));
+    })));
+  const pending = runner.speak('A long reply.');
+  await new Promise(resolve => setImmediate(resolve));
+  assert.equal(runner.stop(), true);
+  assert.deepEqual(await pending, { status: 'cancelled' });
+  assert.equal(seenSignal?.aborted, true);
+  assert.deepEqual(calls, []);
+});

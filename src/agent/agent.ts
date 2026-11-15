@@ -68,6 +68,8 @@ export interface AgentOptions {
   readonly persona?: PersonaId;
   /** User-written character for that assistant, woven into the system prompt. */
   readonly character?: string;
+  /** The spoken reply is read by a voice that handles Devanagari (the natural voice). */
+  readonly devanagariVoice?: boolean;
   /** Lasting facts from earlier conversations, shown in the system prompt. */
   readonly memory?: MemoryStore;
   /** Overrides environment discovery (used by tests). */
@@ -754,7 +756,7 @@ async function runAgentTask(
     // A spoken request carries its note in the message, keeping the system prompt cacheable.
     // Notes and pictures travel with this request's message, keeping the system prompt cacheable.
     const notes = [
-      ...(options.voice ? [spokenRequestNote(options.persona)] : []),
+      ...(options.voice ? [spokenRequestNote(options.persona, options.devanagariVoice ? { devanagariVoice: true } : {})] : []),
       ...(options.planOnly ? [PLAN_MODE_NOTE] : []),
     ];
     let promptIndex = -1;

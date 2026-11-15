@@ -30,6 +30,7 @@ import { loadConfig, validateOllamaModel } from '../config/config.ts';
 import { OllamaProvider } from '../providers/provider.ts';
 import { PersistenceError, SqliteStore } from '../storage/sqlite-store.ts';
 import { UsageSampler } from '../desktop/usage-sampler.ts';
+import { NaturalVoice } from '../desktop/natural-voice.ts';
 import { ProviderError } from '../providers/provider.ts';
 import { ToolExecutionError } from '../tools/executor.ts';
 import type { Logger } from '../types.ts';
@@ -79,7 +80,8 @@ const mcpAllowed = new Set<string>();
 /** Commands the user chose to always allow; cleared when the app quits. */
 /** Standing permissions (apps, browsers, web hosts) are loaded from disk at startup. */
 let approvalMemory = new ApprovalMemory();
-const macSpeechRunner = new MacSpeechRunner();
+const naturalVoice = new NaturalVoice(join(app.getPath('userData'), 'natural-voice'));
+const macSpeechRunner = new MacSpeechRunner(undefined, undefined, naturalVoice);
 /** Approved file changes per request, so "undo karo" can put them back. */
 /** Drives the user's Chrome for the browser tool, when Chrome is installed. */
 const chromeBrowser = existsSync('/Applications/Google Chrome.app') ? new ChromeBrowser() : undefined;
@@ -843,6 +845,7 @@ ipcMain.handle('vyomara:chat-send', async (_event, input: unknown) => {
         ...(request.images ? { images: request.images } : {}),
         persona,
         ...(characters[persona] === undefined ? {} : { character: characters[persona] }),
+        ...(macSpeechRunner.naturalVoiceReady ? { devanagariVoice: true } : {}),
         onText: text => send('vyomara:chat-text', { requestId: request.requestId, text }),
         onToolActivity: activity => send('vyomara:tool-activity', { requestId: request.requestId, ...activity }),
         onPlan: steps => send('vyomara:plan', { requestId: request.requestId, steps }),
@@ -1367,6 +1370,7 @@ app.on('before-quit', () => {
   whisperServer.stop();
   void localWhisperRunner?.stop();
   usageSampler?.stop();
+  naturalVoice.stop();
   try { usageStore?.close(); } catch { /* already closed */ }
 });
 

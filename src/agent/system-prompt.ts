@@ -360,10 +360,12 @@ export function carriesProjectInstructions(context: string | undefined, project:
  * prompt and tool list then stay identical for typed and spoken requests, so
  * Ollama can reuse the copy it already read (see primeAgent).
  */
-export function spokenRequestNote(personaId?: PersonaId): string {
+export function spokenRequestNote(personaId?: PersonaId, options: { readonly devanagariVoice?: boolean } = {}): string {
   const persona = personaFor(personaId);
   return `(Spoken request: I said this aloud and will hear your reply read aloud. Answer in one or two short, natural sentences (no lists, code, or Markdown) unless I ask for details. Work with tools exactly as usual; only the final answer is short.
-${persona.gender === 'male'
-    ? '- Write the reply in English or Roman-letter Hinglish, never Devanagari: your voice can only read Roman letters.\n'
-    : ''}- The text comes from speech recognition and words may be misheard or oddly spelled, often in Devanagari (e.g. "क्यालकुलेट अकॉलो" = "Calculator kholo", "वियेस कोड" = "VS Code", "क्रोम" = "Chrome"). Work out what was most likely meant from how it sounds and act on it; ask only if it is really unclear.)`;
+${options.devanagariVoice
+    ? '- Your voice reads Hindi in Devanagari and English in Roman letters. Write Hindi words in Devanagari and English or technical words in Roman letters, even when I spoke Hinglish; never Hindi in Roman letters.\n'
+    : persona.gender === 'male'
+      ? '- Write the reply in English or Roman-letter Hinglish, never Devanagari: your voice can only read Roman letters.\n'
+      : ''}- The text comes from speech recognition and words may be misheard or oddly spelled, often in Devanagari (e.g. "क्यालकुलेट अकॉलो" = "Calculator kholo", "वियेस कोड" = "VS Code", "क्रोम" = "Chrome"). Work out what was most likely meant from how it sounds and act on it; ask only if it is really unclear.)`;
 }
