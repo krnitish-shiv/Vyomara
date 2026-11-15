@@ -35,9 +35,20 @@ console.log(`\nVyomara ${version} (${arch})\n  app: ${appBundle}\n  dmg: ${dmg} 
 
 if (install) {
   const installed = '/Applications/Vyomara.app';
+  const isVyomaraRunning = () => {
+    const result = spawnSync('/usr/bin/pgrep', ['-f', 'Vyomara.app/Contents/MacOS/Electron']);
+    if (result.error) throw result.error;
+    if (result.status !== 0 && result.status !== 1) {
+      throw new Error(`/usr/bin/pgrep failed with exit code ${result.status}.`);
+    }
+    return result.status === 0;
+  };
+
   // Quit a running copy first, so the files can be replaced.
-  run('/usr/bin/osascript', ['-e', 'if application id "app.vyomara.desktop" is running then tell application id "app.vyomara.desktop" to quit']);
-  for (let wait = 0; wait < 20 && spawnSync('/usr/bin/pgrep', ['-f', 'Vyomara.app/Contents/MacOS/Electron']).status === 0; wait += 1) {
+  if (isVyomaraRunning()) {
+    run('/usr/bin/osascript', ['-e', 'tell application id "app.vyomara.desktop" to quit']);
+  }
+  for (let wait = 0; wait < 20 && isVyomaraRunning(); wait += 1) {
     spawnSync('/bin/sleep', ['0.5']);
   }
   if (existsSync(installed)) rmSync(installed, { recursive: true, force: true });
