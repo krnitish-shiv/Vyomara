@@ -10,6 +10,7 @@ import type {
   DesktopPlan,
   DesktopSpeechRecognitionEvent,
   DesktopLiveSpeechEvent,
+  DesktopAudioPlayEvent,
   DesktopToolActivity,
   VyomaraDesktopApi,
 } from '../desktop/contracts.ts';
@@ -163,6 +164,23 @@ const api: VyomaraDesktopApi = {
   },
   liveSpeechDone(requestId: string) {
     return ipcRenderer.invoke('vyomara:live-speech-done', requestId);
+  },
+  onAudioPlay(listener: (event: DesktopAudioPlayEvent) => void) {
+    const handler = (_event: Electron.IpcRendererEvent, playEvent: DesktopAudioPlayEvent): void => {
+      listener(playEvent);
+    };
+    ipcRenderer.on('vyomara:audio-play', handler);
+    return () => ipcRenderer.removeListener('vyomara:audio-play', handler);
+  },
+  onAudioStop(listener: (event: { readonly id: number }) => void) {
+    const handler = (_event: Electron.IpcRendererEvent, stopEvent: { readonly id: number }): void => {
+      listener(stopEvent);
+    };
+    ipcRenderer.on('vyomara:audio-stop', handler);
+    return () => ipcRenderer.removeListener('vyomara:audio-stop', handler);
+  },
+  audioDone(id: number, status: 'completed' | 'cancelled' | 'failed') {
+    ipcRenderer.send('vyomara:audio-done', { id, status });
   },
   approveAllFileOperations(id: string) {
     return ipcRenderer.invoke('vyomara:file-operation-approve-all', id);

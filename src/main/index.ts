@@ -9,7 +9,7 @@ import { app, BrowserWindow, dialog, globalShortcut, ipcMain, Notification, scre
 import type { SaveDialogOptions } from 'electron';
 import { fileURLToPath, pathToFileURL } from 'node:url';
 import { mkdir, readFile, rename, writeFile } from 'node:fs/promises';
-import { spawnSync } from 'node:child_process';
+import { spawn, spawnSync } from 'node:child_process';
 import { join } from 'node:path';
 import { AgentError } from '../agent/agent.ts';
 import {
@@ -87,6 +87,56 @@ const mcpAllowed = new Set<string>();
 let approvalMemory = new ApprovalMemory();
 const naturalVoice = new NaturalVoice(join(app.getPath('userData'), 'natural-voice'));
 const macSpeechRunner = new MacSpeechRunner(undefined, undefined, naturalVoice);
+
+/**
+ * Synthesized speech plays in the app window, not through afplay: the
+ * microphone's echo canceller then knows what the speakers are playing, so
+ * the user can talk over Vyom to interrupt (barge-in). If the window cannot
+ * play it, afplay plays the file, so a reply is never silent.
+ */
+let audioSequence = 0;
+const audioWaiters = new Map<number, (status: 'completed' | 'cancelled' | 'failed') => void>();
+macSpeechRunner.setFilePlayer(file => {
+  const window = mainWindow;
+  if (!window || window.isDestroyed()) return undefined;
+  const id = audioSequence += 1;
+  let settle!: (result: { status: 'completed' | 'cancelled' }) => void;
+  const done = new Promise<{ status: 'completed' | 'cancelled' }>(resolve => { settle = resolve; });
+  const timeout = setTimeout(() => audioWaiters.get(id)?.('completed'), 180_000);
+  audioWaiters.set(id, status => {
+    audioWaiters.delete(id);
+    clearTimeout(timeout);
+    if (status !== 'failed') {
+      settle({ status });
+      return;
+    }
+    // The window could not play it: afplay instead.
+    const child = spawn('/usr/bin/afplay', [file], { stdio: 'ignore', shell: false });
+    child.once('error', () => settle({ status: 'completed' }));
+    child.once('close', () => settle({ status: 'completed' }));
+  });
+  void readFile(file)
+    .then(bytes => {
+      if (window.isDestroyed()) audioWaiters.get(id)?.('failed');
+      else window.webContents.send('vyomara:audio-play', { id, bytes });
+    })
+    .catch(() => audioWaiters.get(id)?.('failed'));
+  return {
+    done,
+    stop: () => {
+      if (!window.isDestroyed()) window.webContents.send('vyomara:audio-stop', { id });
+      audioWaiters.get(id)?.('cancelled');
+    },
+  };
+});
+
+ipcMain.on('vyomara:audio-done', (event, input: unknown) => {
+  if (event.sender !== mainWindow?.webContents) return;
+  if (typeof input !== 'object' || input === null) return;
+  const { id, status } = input as { id?: unknown; status?: unknown };
+  if (typeof id !== 'number') return;
+  audioWaiters.get(id)?.(status === 'failed' ? 'failed' : status === 'cancelled' ? 'cancelled' : 'completed');
+});
 
 /**
  * One speaker at a time: clauses of a live reply and one-off lines (approval

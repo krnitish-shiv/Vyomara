@@ -40,6 +40,7 @@ proposed decisions must not be presented as current implementation choices.
 | [0028](./0028-natural-voice.md) | Natural local voice (Kokoro) beside the system voice | Accepted |
 | [0029](./0029-twins-and-inner-team.md) | Two twins in front, an inner team behind them | Accepted |
 | [0030](./0030-hinglish-hearing-and-live-speech.md) | Hinglish speech model and live spoken replies | Accepted |
+| [0031](./0031-speech-in-window-and-barge-in.md) | Speech plays in the window; the user can talk over the twin | Accepted |
 
 ## Open decisions
 

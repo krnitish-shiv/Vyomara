@@ -7,6 +7,13 @@ export type MacSpeechResult =
   | { readonly status: 'completed' }
   | { readonly status: 'cancelled' };
 
+/**
+ * Plays a synthesized file somewhere other than afplay (the app window, so
+ * the microphone's echo canceller hears it and the user can talk over it).
+ * Returns undefined when it cannot play right now; afplay is used instead.
+ */
+export type FilePlayer = (file: string) => { readonly done: Promise<MacSpeechResult>; readonly stop: () => void } | undefined;
+
 /** A clause ready to play (see MacSpeechRunner.prepare). */
 export type PreparedSpeech =
   | { readonly kind: 'file'; readonly file: string }
@@ -113,6 +120,8 @@ export class MacSpeechRunner {
 
   readonly #natural: NaturalSpeechPort | undefined;
   #synthesis: AbortController | undefined;
+  #filePlayer: FilePlayer | undefined;
+  #stopPlayer: (() => void) | undefined;
 
   constructor(
     spawnProcess: SpawnSpeechProcess = spawnMacSpeechProcess,
@@ -122,6 +131,24 @@ export class MacSpeechRunner {
     this.#spawnProcess = spawnProcess;
     this.#platform = platform;
     this.#natural = natural;
+  }
+
+  /** Play synthesized speech through this player (the app window) instead of afplay. */
+  setFilePlayer(player: FilePlayer | undefined): void {
+    this.#filePlayer = player;
+  }
+
+  /** Play a synthesized file: through the file player when set, otherwise afplay. */
+  async #playFile(file: string): Promise<MacSpeechResult> {
+    if (this.#activeChild || this.#stopPlayer) throw new MacSpeechError('Speech output is already in progress.');
+    const playback = this.#filePlayer?.(file);
+    if (!playback) return this.#run('/usr/bin/afplay', [file]);
+    this.#stopPlayer = playback.stop;
+    try {
+      return await playback.done;
+    } finally {
+      this.#stopPlayer = undefined;
+    }
   }
 
   /** Replies are read in the natural voice (Kokoro) when it is installed. */
@@ -196,7 +223,7 @@ export class MacSpeechRunner {
   async play(prepared: PreparedSpeech): Promise<MacSpeechResult> {
     if (prepared.kind === 'say') return this.#speak(prepared.text, prepared.voice);
     try {
-      return await this.#run('/usr/bin/afplay', [prepared.file]);
+      return await this.#playFile(prepared.file);
     } finally {
       void rm(prepared.file, { force: true });
     }
@@ -225,7 +252,7 @@ export class MacSpeechRunner {
     }
     try {
       if (stops !== this.#stopCount) return { status: 'cancelled' };
-      return await this.#run('/usr/bin/afplay', [file]);
+      return await this.#playFile(file);
     } catch {
       return undefined;
     } finally {
@@ -305,6 +332,10 @@ export class MacSpeechRunner {
   stop(): boolean {
     this.#stopCount += 1;
     this.#synthesis?.abort();
+    if (this.#stopPlayer) {
+      this.#stopPlayer();
+      return true;
+    }
     const child = this.#activeChild;
     if (!child) return this.#starting > 0;
     const stopped = child.kill('SIGTERM');

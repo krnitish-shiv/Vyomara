@@ -25,6 +25,7 @@ import { TurnCollector, turnPauseMs } from '../../../shared/turn-taking.ts';
 import { DEFAULT_PERSONA, PERSONAS, type PersonaId } from '../../../shared/persona.ts';
 import { playEarcon } from './earcon.ts';
 import { VoiceCapture } from './voice-capture.ts';
+import { SpeechPlayer } from './speech-player.ts';
 import vyomaraWordmark from './assets/vyomara-wordmark.png';
 
 /** "just now", "5 min ago", "2:40 PM", "Yesterday", "Mon", "3 Nov". */
@@ -184,6 +185,16 @@ export function App() {
   /** Words of the spoken turn in progress, shown live in the message box. */
   const [liveTurn, setLiveTurn] = useState('');
   const speakingRef = useRef(false);
+  const speechPlayer = useRef(new SpeechPlayer(playing => {
+    // While the reply plays here and hands-free listening is on, a user who
+    // talks over it interrupts it instead of being ignored.
+    if (playing && speakingRef.current && voiceListeningRef.current) {
+      voiceCapture.current.setBargeIn(() => interruptSpeakingRef.current());
+    }
+  }));
+  const interruptSpeakingRef = useRef<() => void>(() => undefined);
+  // Function declarations are hoisted: always call this render's interruptSpeaking.
+  interruptSpeakingRef.current = interruptSpeaking;
   /** Settles when the current spoken reply has fully stopped. */
   const speechDone = useRef<Promise<void>>(Promise.resolve());
   const handleTurn = useRef<((text: string) => void) | undefined>(undefined);
@@ -347,6 +358,20 @@ export function App() {
         : 'smooth',
     });
   }, [messages, requestPending]);
+
+  // The twin's voice plays in this window, so the echo canceller hears it and
+  // the user can interrupt by talking over it (barge-in).
+  useEffect(() => {
+    const stopPlay = window.vyomara.onAudioPlay(({ id, bytes }) => {
+      speechPlayer.current.play(id, bytes, status => window.vyomara.audioDone(id, status));
+    });
+    const stopStop = window.vyomara.onAudioStop(({ id }) => speechPlayer.current.stop(id));
+    return () => {
+      stopPlay();
+      stopStop();
+      speechPlayer.current.stop();
+    };
+  }, []);
 
   // The main process reads voice replies aloud clause by clause while they are written.
   useEffect(() => {
@@ -740,8 +765,9 @@ export function App() {
     return done;
   }
 
-  /** Stop Vyom mid-sentence and listen again (the orb was pressed while it spoke). */
+  /** Stop Vyom mid-sentence and listen again (the orb was pressed, or the user talked over it). */
   function interruptSpeaking(): void {
+    speechPlayer.current.stop();
     greetingRun.current += 1;
     speakingRef.current = false;
     setVyomSpeaking(false);

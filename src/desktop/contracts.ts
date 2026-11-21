@@ -26,6 +26,12 @@ export interface DesktopChatResponse {
   readonly spokenLive?: true;
 }
 
+/** Synthesized speech for the window to play (WAV bytes). */
+export interface DesktopAudioPlayEvent {
+  readonly id: number;
+  readonly bytes: Uint8Array;
+}
+
 export interface DesktopLiveSpeechEvent {
   readonly requestId: string;
   readonly speaking: boolean;
@@ -277,6 +283,10 @@ export interface VyomaraDesktopApi {
   onLiveSpeech(listener: (event: DesktopLiveSpeechEvent) => void): () => void;
   /** Resolves when the live spoken reply for this request has finished. */
   liveSpeechDone(requestId: string): Promise<void>;
+  /** Play synthesized speech in the window (so the echo canceller hears it); report back with audioDone. */
+  onAudioPlay(listener: (event: DesktopAudioPlayEvent) => void): () => void;
+  onAudioStop(listener: (event: { readonly id: number }) => void): () => void;
+  audioDone(id: number, status: 'completed' | 'cancelled' | 'failed'): void;
   /** Approve this change and all later edits in the current task (not deletions). */
   approveAllFileOperations(id: string): Promise<void>;
   /** Whether the mini window may appear over other apps. */

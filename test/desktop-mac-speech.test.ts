@@ -142,3 +142,32 @@ test('stopping while the natural voice is still synthesizing cancels the reply',
   assert.equal(seenSignal?.aborted, true);
   assert.deepEqual(calls, []);
 });
+
+test('with a file player, synthesized speech plays in the app window and can be stopped there', async () => {
+  const spawned: string[] = [];
+  const spawnProcess: SpawnSpeechProcess = executable => { spawned.push(executable); const child = new FakeSpeechChild(); queueMicrotask(() => child.emit('close', 0, null)); return child; };
+  const runner = new MacSpeechRunner(spawnProcess, 'darwin', naturalPort(async () => '/tmp/vyomara-player-test.wav'));
+  const played: string[] = [];
+  let finish!: (result: { status: 'completed' | 'cancelled' }) => void;
+  let stopped = 0;
+  runner.setFilePlayer(file => {
+    played.push(file);
+    return { done: new Promise(resolve => { finish = resolve; }), stop: () => { stopped += 1; finish({ status: 'cancelled' }); } };
+  });
+  const prepared = await runner.prepare('Haan, ho gaya.', 'female');
+  assert.ok(prepared && prepared.kind === 'file');
+  const playing = runner.play(prepared);
+  await new Promise(resolve => setTimeout(resolve, 0));
+  assert.deepEqual(played, ['/tmp/vyomara-player-test.wav']);
+  assert.equal(runner.stop(), true);
+  assert.deepEqual(await playing, { status: 'cancelled' });
+  assert.equal(stopped, 1);
+  assert.deepEqual(spawned, [], 'afplay was not used');
+
+  // Without a window the player declines and afplay plays it.
+  runner.setFilePlayer(() => undefined);
+  const again = await runner.prepare('Theek hai.', 'female');
+  assert.ok(again);
+  assert.deepEqual(await runner.play(again), { status: 'completed' });
+  assert.deepEqual(spawned, ['/usr/bin/afplay']);
+});
