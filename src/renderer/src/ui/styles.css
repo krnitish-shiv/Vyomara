@@ -1147,3 +1147,10 @@ body::after {
   mask-position: left center;
 }
 .workspace { width: 100%; }
+
+/* Use the whole window: thin outer margin, tighter corners, no width cap
+   (the window zoom already scales the interface on big monitors). */
+.app-shell { width: 100%; padding: 6px 6px 8px; }
+.topbar { border-radius: 12px 12px 0 0; }
+.workspace { border-radius: 0 0 12px 12px; }
+@media (max-height: 720px) { .app-shell { padding: 4px 4px 6px; } }

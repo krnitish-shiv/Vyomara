@@ -44,13 +44,15 @@ export function turnPauseMs(text: string): number {
 }
 
 export class TurnCollector {
-  readonly #onTurn: (text: string) => void;
+  readonly #onTurn: (text: string, audio: readonly Uint8Array[]) => void;
   readonly #endOfTurnMs: number;
   readonly #pauseFor: ((text: string) => number) | undefined;
   readonly #schedule: (callback: () => void, ms: number) => () => void;
   readonly #now: () => number;
   /** Transcripts in speaking order; undefined while still being transcribed. */
   #slots: (string | undefined)[] = [];
+  /** Each phrase's recording, in speaking order, handed over with the turn. */
+  #audio: Uint8Array[] = [];
   #speaking = false;
   /** When the speaker last went quiet (undefined while speaking). */
   #quietSince: number | undefined;
@@ -58,7 +60,7 @@ export class TurnCollector {
   /** Bumped by reset() so late transcripts from an abandoned turn are dropped. */
   #generation = 0;
 
-  constructor(onTurn: (text: string) => void, options: TurnCollectorOptions = {}) {
+  constructor(onTurn: (text: string, audio: readonly Uint8Array[]) => void, options: TurnCollectorOptions = {}) {
     this.#onTurn = onTurn;
     this.#endOfTurnMs = options.endOfTurnMs ?? 1000;
     this.#pauseFor = options.pauseFor;
@@ -91,10 +93,11 @@ export class TurnCollector {
   }
 
   /** Reserve the next place for a phrase being transcribed; call the returned function with its text. */
-  addPhrase(): (text: string | undefined) => void {
+  addPhrase(audio?: Uint8Array): (text: string | undefined) => void {
     const index = this.#slots.length;
     const generation = this.#generation;
     this.#slots.push(undefined);
+    if (audio) this.#audio.push(audio);
     this.#arm();
     return text => {
       if (generation !== this.#generation || index >= this.#slots.length) return;
@@ -108,6 +111,7 @@ export class TurnCollector {
     this.#cancelTimer?.();
     this.#cancelTimer = undefined;
     this.#slots = [];
+    this.#audio = [];
     this.#speaking = false;
     this.#quietSince = undefined;
     this.#generation += 1;
@@ -135,7 +139,8 @@ export class TurnCollector {
   #finish(): void {
     if (this.#speaking || this.#slots.some(slot => slot === undefined)) return;
     const text = this.text;
+    const audio = this.#audio;
     this.reset();
-    if (text) this.#onTurn(text);
+    if (text) this.#onTurn(text, audio);
   }
 }

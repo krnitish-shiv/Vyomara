@@ -173,3 +173,34 @@ export function encodeWav(samples: Float32Array, sampleRate = 16_000): Uint8Arra
   }
   return new Uint8Array(buffer);
 }
+
+/**
+ * Join phrases recorded by encodeWav (16-bit mono PCM, 44-byte header) into
+ * one WAV, with a short silence between them, so a whole spoken turn can be
+ * transcribed at once: whisper hears the full sentence instead of fragments.
+ * Undefined if any part is not such a WAV or the result would exceed `maxBytes`.
+ */
+export function joinWavs(parts: readonly Uint8Array[], sampleRate = 16_000, gapMs = 200, maxBytes = Number.POSITIVE_INFINITY): Uint8Array | undefined {
+  if (parts.length === 0) return undefined;
+  if (parts.length === 1) return parts[0];
+  const gap = Math.round((gapMs / 1000) * sampleRate) * 2;
+  let dataBytes = 0;
+  for (const part of parts) {
+    if (part.byteLength < 44 || String.fromCharCode(...part.subarray(0, 4)) !== 'RIFF' || String.fromCharCode(...part.subarray(36, 40)) !== 'data') return undefined;
+    dataBytes += part.byteLength - 44;
+  }
+  dataBytes += gap * (parts.length - 1);
+  if (44 + dataBytes > maxBytes) return undefined;
+  const out = new Uint8Array(44 + dataBytes);
+  out.set(parts[0]!.subarray(0, 44), 0);
+  const view = new DataView(out.buffer);
+  view.setUint32(4, 36 + dataBytes, true);
+  view.setUint32(40, dataBytes, true);
+  let offset = 44;
+  parts.forEach((part, index) => {
+    if (index > 0) offset += gap; // zero bytes = silence
+    out.set(part.subarray(44), offset);
+    offset += part.byteLength - 44;
+  });
+  return out;
+}

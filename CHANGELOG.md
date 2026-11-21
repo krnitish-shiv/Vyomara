@@ -11,6 +11,8 @@ All notable changes to Vyomara are listed here. Versions follow
   about five times faster than before. Used automatically once installed (ADR-0030).
 - Spoken replies start while they are still being written: the first words
   come in about half a second instead of after the whole answer.
+- A request spoken with pauses is transcribed again as one recording, so
+  words cut at the pauses come out right.
 - Talk over Vyom or Vyomara to interrupt them: their voice now plays inside
   the app, so the echo canceller removes it from the microphone (ADR-0031).
 - The twins say a short line the moment they start working ("Khoj ko de rahi

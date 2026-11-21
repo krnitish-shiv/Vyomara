@@ -123,3 +123,35 @@ test('the pause rules read Hinglish, Hindi, and English endings', async () => {
   }
   assert.equal(turnPauseMs('shop project ka cart'), 900);
 });
+
+test('a turn hands over each phrase recording, and joined they form one WAV', async () => {
+  const { encodeWav, joinWavs } = await import('../src/shared/phrase-detector.ts');
+  let received: readonly Uint8Array[] = [];
+  let clock = 0;
+  let pending: (() => void) | undefined;
+  const collector = new TurnCollector((_text, audio) => { received = audio; }, {
+    now: () => clock,
+    schedule: callback => { pending = callback; return () => { pending = undefined; }; },
+  });
+  const first = encodeWav(new Float32Array(1_600).fill(0.1));
+  const second = encodeWav(new Float32Array(800).fill(-0.1));
+  collector.speechStarted();
+  collector.speechEnded();
+  collector.addPhrase(first)('shop project');
+  collector.speechStarted();
+  collector.speechEnded();
+  collector.addPhrase(second)('kholo');
+  clock += 5_000;
+  pending?.();
+  assert.deepEqual(received, [first, second]);
+  const joined = joinWavs(received);
+  assert.ok(joined);
+  // 1,600 + 3,200 (200 ms gap) + 800 samples, 2 bytes each.
+  assert.equal(joined.byteLength, 44 + (1_600 + 3_200 + 800) * 2);
+  const view = new DataView(joined.buffer);
+  assert.equal(view.getUint32(40, true), (1_600 + 3_200 + 800) * 2);
+  assert.equal(view.getInt16(44 + 1_600 * 2 + 100, true), 0, 'the gap is silence');
+  assert.equal(joinWavs([first]), first);
+  assert.equal(joinWavs([first, second], 16_000, 200, 1_000), undefined, 'too long for one request');
+  assert.equal(joinWavs([new Uint8Array(10), second]), undefined);
+});

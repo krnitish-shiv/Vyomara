@@ -26,6 +26,10 @@ import { DEFAULT_PERSONA, PERSONAS, type PersonaId } from '../../../shared/perso
 import { playEarcon } from './earcon.ts';
 import { VoiceCapture } from './voice-capture.ts';
 import { SpeechPlayer } from './speech-player.ts';
+import { joinWavs } from '../../../shared/phrase-detector.ts';
+
+/** The speech server accepts up to 16 s of audio per request (MAX_UTTERANCE_BYTES). */
+const MAX_TURN_WAV_BYTES = 44 + 16_000 * 2 * 16;
 import vyomaraWordmark from './assets/vyomara-wordmark.png';
 
 /** "just now", "5 min ago", "2:40 PM", "Yesterday", "Mon", "3 Nov". */
@@ -197,10 +201,10 @@ export function App() {
   interruptSpeakingRef.current = interruptSpeaking;
   /** Settles when the current spoken reply has fully stopped. */
   const speechDone = useRef<Promise<void>>(Promise.resolve());
-  const handleTurn = useRef<((text: string) => void) | undefined>(undefined);
+  const handleTurn = useRef<((text: string, audio: readonly Uint8Array[]) => void) | undefined>(undefined);
   /** Joins the phrases of one spoken request and waits until the speaker has finished. */
   // The turn ends sooner after a finished sentence and later after one that trails off ("aur…").
-  const turn = useRef(new TurnCollector(text => handleTurn.current?.(text), { pauseFor: turnPauseMs }));
+  const turn = useRef(new TurnCollector((text, audio) => handleTurn.current?.(text, audio), { pauseFor: turnPauseMs }));
   const dictationRef = useRef<'main' | 'pip' | undefined>(undefined);
   const pendingTranscriptions = useRef(new Set<Promise<unknown>>());
   /** Whether the request in progress was spoken (only spoken requests get spoken replies). */
@@ -644,7 +648,7 @@ export function App() {
   function routePhrase(wav: Uint8Array): void {
     const target = dictationRef.current;
     // In conversation, phrases are collected into one turn (see handleTurn).
-    const fillTurn = target ? undefined : turn.current.addPhrase();
+    const fillTurn = target ? undefined : turn.current.addPhrase(wav);
     if (!target && !turn.current.text) setVoiceTranscript('…');
     const job = window.vyomara.transcribeSpeech(wav)
       .then(text => {
@@ -675,10 +679,22 @@ export function App() {
   }
 
   /** The speaker finished a turn in conversation: decide what it means. */
-  handleTurn.current = text => {
+  handleTurn.current = (text, audio) => {
     setLiveTurn('');
     setVoiceTranscript(text);
-    handleHeard.current?.(text);
+    // A turn spoken in several pieces is transcribed again as one recording:
+    // whisper hears the whole sentence, which fixes words cut at the pauses.
+    const whole = audio.length > 1 ? joinWavs(audio, 16_000, 200, MAX_TURN_WAV_BYTES) : undefined;
+    if (!whole) {
+      handleHeard.current?.(text);
+      return;
+    }
+    void window.vyomara.transcribeSpeech(whole)
+      .then(full => (full && !isLikelyNoise(full) ? full : text), () => text)
+      .then(final => {
+        setVoiceTranscript(final);
+        handleHeard.current?.(final);
+      });
   };
 
   startCapture.current = () => voiceCapture.current.start({

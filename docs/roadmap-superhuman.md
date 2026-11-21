@@ -35,8 +35,8 @@ From the owner's real test on 2026-11-21. They rated the reply quality "very bad
   - qwen3.6-27b: 8/8 passed, good Hinglish, about 7 s per warm reply, 95 s cold.
 - [ ] **Model choice.** Run `eval:talk` and `eval` on Qwen3-Coder-30B-A3B (downloading) and gpt-oss:20b (download paused), then pick the default. Goal: Hinglish as good as qwen3.6-27b at qwen3:14b speed or better.
 - [ ] **Cold first reply** (47–95 s). Shrink the ~8k-token fixed prompt (tool descriptions), keep the model loaded longer than 30 minutes, and give a spoken acknowledgement during the wait.
-- [ ] **Listening.** Transcribe the whole turn's audio once at the end instead of short pieces separately, so whisper gets the full sentence. Re-check turn-end timing.
-- [ ] **UI corner space.** Tighten the outer padding, rounded corners and side columns so the content uses the window.
+- [x] **Listening.** A turn spoken in pieces is transcribed again as one recording at the end (+~0.35 s), so whisper hears the whole sentence.
+- [x] **UI corner space.** Outer margin 18–24px → 6px, corners 18 → 12px, no width cap.
 - [ ] **Voices.** Maya 2 Native samples for Vyom and Vyomara (5 voices each, model downloading); the owner listens and chooses; then a Maya sidecar with Kokoro as fallback.
 - [ ] **Talker/worker (milestone 5).** A small fast model for instant replies while the main model works.
 - [ ] **Twin hologram (milestone 6).** Design it with the owner and attach it to the orb.
