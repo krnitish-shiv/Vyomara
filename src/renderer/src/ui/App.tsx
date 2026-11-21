@@ -209,6 +209,8 @@ export function App() {
   const shouldRestoreComposerFocus = useRef(false);
   const historyTrigger = useRef<HTMLButtonElement>(null);
   const activityHeading = useRef<HTMLHeadingElement>(null);
+  /** Narrow windows show the activity panel as a drawer. */
+  const [activityOpen, setActivityOpen] = useState(false);
   const historyHeading = useRef<HTMLHeadingElement>(null);
   const fileOperationReview = useRef<HTMLElement>(null);
   const actionReview = useRef<HTMLElement>(null);
@@ -1373,7 +1375,7 @@ export function App() {
         </button>
       </header>
 
-      <div className="workspace">
+      <div className={`workspace${activityOpen ? ' activity-drawer-open' : ''}`}>
         <nav className="side-nav" aria-label="Main navigation">
           <div className="side-nav-group">
             <p className="side-nav-label">ASSISTANT</p>
@@ -1424,8 +1426,18 @@ export function App() {
                 </div>
               )}
             </div>
-            <button className="side-nav-item" type="button" onClick={() => activityHeading.current?.focus()}>
-              <span aria-hidden="true">▤</span> Tasks &amp; Activity
+            <button
+              className="side-nav-item"
+              type="button"
+              aria-expanded={activityOpen}
+              onClick={() => {
+                // On narrow windows the activity panel is a drawer: this opens and closes it.
+                setActivityOpen(open => !open);
+                requestAnimationFrame(() => activityHeading.current?.focus());
+              }}
+              title="Tasks & Activity"
+            >
+              <span aria-hidden="true">▤</span> <span className="side-nav-text">Tasks &amp; Activity</span>
               {requestPending && <span className="nav-indicator" aria-label="Task running">●</span>}
             </button>
             <button
@@ -1442,7 +1454,7 @@ export function App() {
                 ? `Review ${pendingApprovals} pending approval${pendingApprovals === 1 ? '' : 's'}`
                 : 'No pending approvals'}
             >
-              <span aria-hidden="true">◇</span> Approvals
+              <span aria-hidden="true">◇</span> <span className="side-nav-text">Approvals</span>
               {pendingApprovals > 0 &&
                 <span className="nav-indicator" aria-label={`${pendingApprovals} pending`}>●</span>}
             </button>
@@ -1456,7 +1468,7 @@ export function App() {
               disabled={requestPending}
               aria-expanded={modelsOpen}
             >
-              <span aria-hidden="true">◎</span> Models
+              <span aria-hidden="true">◎</span> <span className="side-nav-text">Models</span>
             </button>
             <button
               ref={permissionsTrigger}
@@ -1466,7 +1478,7 @@ export function App() {
               aria-expanded={permissionsOpen}
               aria-controls={permissionsOpen ? 'permissions-panel' : undefined}
             >
-              <span aria-hidden="true">✓</span> Permissions
+              <span aria-hidden="true">✓</span> <span className="side-nav-text">Permissions</span>
             </button>
             <button
               ref={memoriesTrigger}
@@ -1476,7 +1488,7 @@ export function App() {
               aria-expanded={memoriesOpen}
               aria-controls={memoriesOpen ? 'memories-panel' : undefined}
             >
-              <span aria-hidden="true">✦</span> Memories
+              <span aria-hidden="true">✦</span> <span className="side-nav-text">Memories</span>
             </button>
             <button
               ref={historyTrigger}
@@ -1487,7 +1499,7 @@ export function App() {
               aria-expanded={historyOpen}
               aria-controls={historyOpen ? 'history-panel' : undefined}
             >
-              <span aria-hidden="true">◷</span> History
+              <span aria-hidden="true">◷</span> <span className="side-nav-text">History</span>
             </button>
           </div>
           <label className="pip-toggle" title={`When on, a small ${assistantName} floats over other apps (VS Code, Chrome …) whenever you leave this window.`}>
@@ -1509,7 +1521,7 @@ export function App() {
             <span className="pip-toggle-switch" aria-hidden="true" />
           </label>
           <button className="new-chat-button side-nav-new-chat" type="button" onClick={startNewChat} disabled={requestPending}>
-            <span aria-hidden="true">＋</span> New conversation
+            <span aria-hidden="true">＋</span> <span className="side-nav-text">New conversation</span>
           </button>
         </nav>
 
@@ -1909,7 +1921,9 @@ export function App() {
           <p className="history-privacy">Saved on this Mac until you delete it.</p>
         </aside>
         ) : (
-        <aside className="activity-panel" aria-label="Task activity">
+        <>
+        <button className="activity-backdrop" type="button" aria-label="Close task activity" tabIndex={-1} onClick={() => setActivityOpen(false)} />
+        <aside className="activity-panel" aria-label="Task activity" onKeyDown={event => { if (event.key === 'Escape') setActivityOpen(false); }}>
           <div className="panel-heading">
             <div>
               <p className="eyebrow">TASK STATUS</p>
@@ -1918,6 +1932,7 @@ export function App() {
             <span className={`activity-state${taskIsRunning ? ' activity-running' : ''}`}>
               {taskIsRunning ? 'Working' : 'Ready'}
             </span>
+            <button className="activity-drawer-close" type="button" aria-label="Close task activity" onClick={() => setActivityOpen(false)}>×</button>
           </div>
           {plan.length > 0 && (
             <section className="plan-card" aria-label={`${assistantName}’s plan`}>
@@ -1986,6 +2001,7 @@ export function App() {
           </div>
           <p className="planned-note">Speech recognition stays on this Mac.</p>
         </aside>
+        </>
         )}
       </div>
     </main>

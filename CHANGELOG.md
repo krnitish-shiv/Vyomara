@@ -25,6 +25,13 @@ All notable changes to Vyomara are listed here. Versions follow
 - Speech recognition now runs with voice-activity detection and non-speech
   suppression, so noise no longer turns into invented words.
 
+### Interface
+- Frosted-glass look: translucent panels over a slow blue-violet aurora.
+- Fits every screen: on an external monitor the whole interface grows with
+  the window (up to 1.75×) and returns to normal on the laptop screen; narrow
+  windows turn the task panel into a drawer, and very narrow ones show the
+  navigation as a row of icons. Small labels are easier to read.
+
 ### Assistants
 - Vyom and Vyomara are the only assistants you talk to. Behind them works an
   inner team (Khoj for research, Yatra for travel, Kavach for Mac health,

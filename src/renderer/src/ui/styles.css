@@ -919,3 +919,231 @@ body.pip-body #root { height: 100vh; }
 .permission-command-form input { height: 30px; padding: 0 9px; border: 1px solid rgba(120, 150, 230, .25); border-radius: 8px; background: rgba(255, 255, 255, .03); color: #e7eaf0; font: inherit; font-size: 11.5px; }
 .permission-command-form small { color: #7486ab; font-size: 10px; line-height: 1.4; }
 .permission-command-form code { font-size: 10px; }
+
+/* =====================================================================
+   Glass + responsive layer (2026-11-21)
+   Frosted, translucent surfaces over a slow aurora, in Vyomara's own
+   blue-violet palette. Large external monitors are handled by the window
+   zoom (src/desktop/ui-scale.ts); the breakpoints below handle windows
+   smaller than the laptop design size.
+   ===================================================================== */
+:root {
+  --glass-bg: rgba(12, 20, 48, .30);
+  --glass-bg-strong: rgba(9, 15, 38, .55);
+  --glass-bg-soft: rgba(30, 44, 96, .22);
+  --glass-border: rgba(156, 178, 255, .15);
+  --glass-border-strong: rgba(170, 150, 255, .30);
+  --glass-highlight: inset 0 1px 0 rgba(255, 255, 255, .07), inset 0 0 0 1px rgba(255, 255, 255, .015);
+  --glass-shadow: 0 18px 50px rgba(1, 4, 16, .45);
+  --glass-blur: blur(22px) saturate(165%);
+  --glass-blur-strong: blur(32px) saturate(180%);
+}
+
+/* The aurora the glass floats over: soft, slowly drifting lights. The colour
+   sits on :root so the lights (z-index -1) paint above it and below the app. */
+:root { background: #040917; }
+body { background: transparent; }
+body::before, body::after {
+  content: '';
+  position: fixed;
+  inset: -20vmax;
+  z-index: -1;
+  pointer-events: none;
+}
+body::before {
+  background:
+    radial-gradient(34vmax 28vmax at 18% 28%, rgba(56, 110, 255, .42), transparent 70%),
+    radial-gradient(30vmax 26vmax at 82% 20%, rgba(150, 92, 255, .38), transparent 70%),
+    radial-gradient(36vmax 24vmax at 58% 92%, rgba(40, 200, 255, .20), transparent 72%),
+    radial-gradient(22vmax 18vmax at 50% 45%, rgba(110, 80, 255, .14), transparent 70%);
+  filter: blur(40px);
+  animation: aurora-drift 38s ease-in-out infinite alternate;
+}
+body::after {
+  /* A faint star dust keeps large dark areas from looking flat. */
+  background-image:
+    radial-gradient(1px 1px at 12% 18%, rgba(200, 215, 255, .35), transparent 60%),
+    radial-gradient(1px 1px at 68% 42%, rgba(200, 215, 255, .25), transparent 60%),
+    radial-gradient(1px 1px at 34% 76%, rgba(220, 200, 255, .25), transparent 60%),
+    radial-gradient(1px 1px at 86% 82%, rgba(200, 215, 255, .2), transparent 60%),
+    radial-gradient(1.5px 1.5px at 52% 12%, rgba(180, 160, 255, .3), transparent 60%);
+  background-size: 420px 420px;
+  opacity: .5;
+}
+@keyframes aurora-drift {
+  0% { transform: translate3d(0, 0, 0) scale(1); }
+  50% { transform: translate3d(3vmax, -2vmax, 0) scale(1.06); }
+  100% { transform: translate3d(-3vmax, 2vmax, 0) scale(1.02); }
+}
+
+.app-shell { width: min(1680px, 100%); }
+
+/* The shell: one frosted pane with a luminous edge. */
+.topbar {
+  border-color: var(--glass-border);
+  border-bottom-color: rgba(156, 178, 255, .10);
+  background: linear-gradient(180deg, rgba(16, 26, 58, .55), rgba(9, 15, 36, .50));
+  -webkit-backdrop-filter: var(--glass-blur-strong);
+  backdrop-filter: var(--glass-blur-strong);
+  box-shadow: var(--glass-highlight);
+}
+.workspace {
+  border-color: var(--glass-border);
+  border-radius: 0 0 18px 18px;
+  background: var(--glass-bg);
+  -webkit-backdrop-filter: var(--glass-blur);
+  backdrop-filter: var(--glass-blur);
+  box-shadow: var(--glass-shadow), var(--glass-highlight);
+}
+.topbar { border-radius: 18px 18px 0 0; }
+.side-nav { background: linear-gradient(180deg, rgba(10, 17, 40, .22), rgba(8, 13, 32, .14)); border-right-color: rgba(156, 178, 255, .10); }
+.conversation { border-right-color: rgba(156, 178, 255, .10); background: radial-gradient(ellipse at 50% 30%, rgba(60, 90, 220, .10), transparent 55%); }
+.activity-panel { border-left-color: rgba(156, 178, 255, .10); background: linear-gradient(180deg, rgba(10, 17, 40, .20), rgba(8, 13, 32, .12)); }
+/* Inner activity cards: frosted tiles. */
+.activity-panel .activity-list, .activity-panel .activity-empty, .activity-panel [class*="current-task"], .activity-panel section, .activity-panel .privacy-card {
+  border-color: var(--glass-border) !important;
+  background: rgba(24, 36, 80, .20) !important;
+  box-shadow: var(--glass-highlight);
+}
+.new-chat-button { white-space: nowrap; }
+
+/* Cards and controls inside the pane: lighter glass with a top highlight. */
+.side-nav-item:hover:not(:disabled) { background: rgba(120, 140, 255, .08); border-color: rgba(156, 178, 255, .14); }
+.side-nav-item-active, .persona-current { background: linear-gradient(135deg, rgba(70, 100, 230, .30), rgba(140, 90, 240, .22)) !important; border-color: var(--glass-border-strong) !important; box-shadow: var(--glass-highlight), 0 6px 20px rgba(60, 70, 200, .18); }
+.privacy-card, .pip-toggle, .new-chat-button, .persona-menu {
+  border-color: var(--glass-border) !important;
+  background: var(--glass-bg-soft) !important;
+  -webkit-backdrop-filter: var(--glass-blur);
+  backdrop-filter: var(--glass-blur);
+  box-shadow: var(--glass-highlight);
+}
+.persona-menu { background: var(--glass-bg-strong) !important; box-shadow: var(--glass-shadow), var(--glass-highlight); }
+.conversation .composer {
+  border-color: rgba(140, 160, 255, .26);
+  background: linear-gradient(180deg, rgba(16, 26, 60, .62), rgba(10, 17, 42, .66));
+  -webkit-backdrop-filter: var(--glass-blur-strong);
+  backdrop-filter: var(--glass-blur-strong);
+  box-shadow: 0 16px 40px rgba(2, 6, 24, .5), var(--glass-highlight), 0 0 0 1px rgba(120, 90, 255, .05);
+}
+.conversation .composer:focus-within { border-color: rgba(176, 150, 255, .5); box-shadow: 0 16px 40px rgba(2, 6, 24, .5), var(--glass-highlight), 0 0 24px rgba(120, 90, 255, .18); }
+.message-user .message-content {
+  border-color: rgba(120, 150, 255, .26);
+  background: linear-gradient(135deg, rgba(45, 75, 190, .34), rgba(110, 70, 220, .22));
+  box-shadow: var(--glass-highlight);
+}
+.message-assistant .message-content {
+  border-color: rgba(156, 178, 255, .13);
+  background: rgba(16, 24, 54, .42);
+  -webkit-backdrop-filter: blur(14px) saturate(150%);
+  backdrop-filter: blur(14px) saturate(150%);
+  box-shadow: var(--glass-highlight);
+}
+
+/* Readability: the smallest labels were 8–10px. */
+.side-nav-item { font-size: 11.5px; }
+.side-nav-label { font-size: 9px; }
+.message-text, .message-markdown { font-size: 14px; }
+.composer textarea { font-size: 14px; }
+.activity-list li { font-size: 12px; }
+.privacy-card h3 { font-size: 12px; }
+.privacy-card p { font-size: 11px; }
+
+/* --- Activity drawer controls (only shown when the panel is a drawer) --- */
+.activity-drawer-close, .activity-backdrop { display: none; }
+
+/* --- Medium windows: slimmer side columns --- */
+@media (max-width: 1180px) {
+  .workspace { grid-template-columns: 164px minmax(0, 1fr) 252px; }
+}
+
+/* --- Narrow windows: the activity panel becomes a drawer --- */
+@media (max-width: 1040px) {
+  .workspace { position: relative; grid-template-columns: 164px minmax(0, 1fr); }
+  .conversation { border-right: 0; }
+  .activity-panel {
+    position: absolute;
+    z-index: 5;
+    top: 0;
+    right: 0;
+    bottom: 0;
+    width: min(320px, 88%);
+    border-left: 1px solid var(--glass-border);
+    border-radius: 0 0 18px 0;
+    background: var(--glass-bg-strong);
+    -webkit-backdrop-filter: var(--glass-blur-strong);
+    backdrop-filter: var(--glass-blur-strong);
+    box-shadow: -18px 0 50px rgba(1, 4, 16, .5), var(--glass-highlight);
+    transform: translateX(105%);
+    visibility: hidden;
+    transition: transform .28s cubic-bezier(.2, .7, .2, 1), visibility 0s linear .28s;
+  }
+  .activity-drawer-open .activity-panel, .activity-panel.history-panel {
+    transform: translateX(0);
+    visibility: visible;
+    transition: transform .28s cubic-bezier(.2, .7, .2, 1), visibility 0s;
+  }
+  .activity-drawer-close {
+    display: inline-grid;
+    place-items: center;
+    width: 26px;
+    height: 26px;
+    margin-left: 8px;
+    border: 1px solid var(--glass-border);
+    border-radius: 8px;
+    background: rgba(255, 255, 255, .04);
+    color: #c9d3f0;
+    font-size: 16px;
+    line-height: 1;
+    cursor: pointer;
+  }
+  .activity-drawer-open .activity-backdrop {
+    display: block;
+    position: absolute;
+    z-index: 4;
+    inset: 0;
+    border: 0;
+    border-radius: 0 0 18px 18px;
+    background: rgba(2, 5, 18, .38);
+    cursor: default;
+  }
+}
+
+/* --- Small windows: the side navigation is a row of icons above the chat --- */
+@media (max-width: 900px) {
+  .workspace { grid-template-columns: minmax(0, 1fr); }
+  .side-nav .side-nav-new-chat { display: inline-flex; align-items: center; width: auto; margin: 0 0 0 auto; padding: 0 12px; min-height: 34px; }
+  .side-nav .pip-toggle { margin: 0; align-self: center; }
+  .activity-panel:not(.history-panel) { display: flex; }
+  .side-nav .side-nav-text, .side-nav .pip-toggle-text { display: none; }
+  .side-nav-item { padding: 0 10px; }
+  .pip-toggle { padding: 6px; }
+}
+
+/* --- Short windows (laptop with the Dock, split screen) --- */
+@media (max-height: 720px) {
+  .app-shell { padding: 10px 12px 14px; }
+  .conversation { padding-top: 18px; }
+  .voice-orbit { min-height: 128px; margin-top: 4px; }
+  .welcome-card h2 { margin-bottom: 6px; }
+  .welcome-copy { line-height: 1.6 !important; }
+}
+@media (max-height: 620px) {
+  .welcome-copy { display: none; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  body::before { animation: none; }
+}
+
+/* The wordmark PNG has a dark backdrop. Glass panels isolate blending, so
+   instead of mix-blend-mode its own brightness masks it: dark becomes clear,
+   the letters keep their colours. */
+.topbar-wordmark {
+  mix-blend-mode: normal;
+  mask-image: url('./assets/vyomara-wordmark.png');
+  mask-mode: luminance;
+  mask-size: contain;
+  mask-repeat: no-repeat;
+  mask-position: left center;
+}
+.workspace { width: 100%; }

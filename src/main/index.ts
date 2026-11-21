@@ -59,6 +59,7 @@ import { ApprovalMemory, DEFAULT_BROWSER, grantId, parseGrantId } from '../tools
 import { MacSpeechError, MacSpeechRunner } from '../desktop/mac-speech.ts';
 import { isSpeechModelId, LocalSpeechError, LocalWhisperRunner, resolveWhisperBinary, SPEECH_MODEL_IDS, SPEECH_MODELS } from '../desktop/local-whisper.ts';
 import { SpeechQueue } from '../desktop/speech-queue.ts';
+import { uiZoomFor } from '../desktop/ui-scale.ts';
 import type { PreparedSpeech } from '../desktop/mac-speech.ts';
 import { ClauseStream } from '../shared/clause-stream.ts';
 import { acknowledgementFor } from '../shared/acknowledgement.ts';
@@ -408,6 +409,29 @@ function createWindow(): BrowserWindow {
   });
   window.webContents.setWindowOpenHandler(() => ({ action: 'deny' }));
   window.webContents.on('will-navigate', event => event.preventDefault());
+  // Scale the interface for the window's size and its screen: maximized on an
+  // external monitor everything grows; back on the laptop it returns to 1x.
+  let scaleTimer: ReturnType<typeof setTimeout> | undefined;
+  const rescale = (): void => {
+    if (window.isDestroyed()) return;
+    const [width = 0, height = 0] = window.getContentSize();
+    const zoom = uiZoomFor({ width, height }, screen.getDisplayMatching(window.getBounds()).workAreaSize);
+    if (Math.abs(window.webContents.getZoomFactor() - zoom) > 0.001) window.webContents.setZoomFactor(zoom);
+  };
+  const scheduleRescale = (): void => {
+    if (scaleTimer) clearTimeout(scaleTimer);
+    scaleTimer = setTimeout(rescale, 120);
+  };
+  for (const name of ['resize', 'move', 'maximize', 'unmaximize', 'enter-full-screen', 'leave-full-screen'] as const) window.on(name as 'resize', scheduleRescale);
+  window.webContents.on('did-finish-load', rescale);
+  screen.on('display-metrics-changed', scheduleRescale);
+  screen.on('display-added', scheduleRescale);
+  screen.on('display-removed', scheduleRescale);
+  window.once('closed', () => {
+    screen.removeListener('display-metrics-changed', scheduleRescale);
+    screen.removeListener('display-added', scheduleRescale);
+    screen.removeListener('display-removed', scheduleRescale);
+  });
   window.on('closed', () => {
     if (mainWindow === window) {
       mainWindow = undefined;
