@@ -1,6 +1,7 @@
 import { randomUUID } from 'node:crypto';
 import { mkdirSync, readFileSync, renameSync, writeFileSync } from 'node:fs';
 import { join, resolve } from 'node:path';
+import { matchScore } from '../shared/hinglish-match.ts';
 
 /**
  * What the assistant remembers across conversations: the user's preferences
@@ -19,10 +20,39 @@ export interface MemoryEntry {
 export const MAX_MEMORY_CHARS = 300;
 const MAX_ENTRIES = 200;
 
-/** Passwords, API keys, tokens, and private keys must never be stored. */
+/** Luhn checksum: real card numbers pass it, prices and phone numbers almost never do. */
+function passesLuhn(digits: string): boolean {
+  let sum = 0;
+  for (let index = 0; index < digits.length; index += 1) {
+    let digit = Number(digits[digits.length - 1 - index]);
+    if (index % 2 === 1) { digit *= 2; if (digit > 9) digit -= 9; }
+    sum += digit;
+  }
+  return sum % 10 === 0;
+}
+
+/**
+ * Passwords, API keys, tokens, private keys, card numbers, Aadhaar and PAN
+ * numbers, and one-time codes must never be stored, in English or Hinglish
+ * ("mera otp 482913 hai").
+ */
 export function looksSecret(text: string): boolean {
-  return /\b(?:password|passwd|pass ?code|pin|api[_ -]?key|secret|token|private key|otp)\b\s*(?:is|=|:)/iu.test(text) ||
-    /\b(?:sk|pk|rk)-[A-Za-z0-9_-]{16,}|\bghp_[A-Za-z0-9]{20,}|\bAKIA[0-9A-Z]{16}\b|\bxox[bpas]-[A-Za-z0-9-]{10,}|-----BEGIN [A-Z ]*PRIVATE KEY/u.test(text);
+  if (/\b(?:password|passwd|pass ?code|pin|api[_ -]?key|secret|token|private key|otp|cvv|upi pin)\b\s*(?:is|=|:)/iu.test(text)) return true;
+  if (/\b(?:sk|pk|rk)-[A-Za-z0-9_-]{16,}|\bghp_[A-Za-z0-9]{20,}|\bgithub_pat_[A-Za-z0-9_]{20,}|\bAKIA[0-9A-Z]{16}\b|\bxox[bpas]-[A-Za-z0-9-]{10,}|\bAIza[0-9A-Za-z_-]{30,}|\bhf_[A-Za-z0-9]{30,}|-----BEGIN [A-Z ]*PRIVATE KEY/u.test(text)) return true;
+  // Hinglish: "otp 482913 hai", "mera pin 4821", "password abc@123 hai".
+  // (A postal "PIN code" / "pincode" is an address, not a secret.)
+  const withoutPostal = text.replace(/\bpin ?code\b/giu, 'postcode');
+  if (/\b(?:otp|pin|cvv|passcode|upi pin)\b\W*(?:\p{L}+\W+){0,3}?\d{3,8}\b/iu.test(withoutPostal)) return true;
+  if (/\bpassword\b\W*(?:\p{L}+\W+){0,2}?(?=\S*\d)(?=\S*\p{L})\S{6,}/iu.test(text)) return true;
+  // Card numbers (13–19 digits, spaces or dashes allowed) that pass the Luhn check.
+  for (const match of text.matchAll(/\b(?:\d[ -]?){12,18}\d\b/gu)) {
+    const digits = match[0].replace(/\D/gu, '');
+    if (digits.length >= 13 && digits.length <= 19 && passesLuhn(digits)) return true;
+  }
+  // Aadhaar (12 digits, often 4-4-4) and PAN (ABCDE1234F).
+  if (/\b[2-9]\d{3}[ -]?\d{4}[ -]?\d{4}\b/u.test(text) && /aadha+r|आधार|uid/iu.test(text)) return true;
+  if (/\b[A-Z]{3}[ABCFGHLJPT][A-Z]\d{4}[A-Z]\b/u.test(text)) return true;
+  return false;
 }
 
 export class MemoryStore {
@@ -51,13 +81,21 @@ export class MemoryStore {
    * Memories for the prompt: general ones and this project's first, then
    * other projects' (each is labelled with its project), within a size budget.
    */
-  relevant(project: string | undefined, maxChars = 4_000): MemoryEntry[] {
+  relevant(project: string | undefined, maxChars = 4_000, query = ''): MemoryEntry[] {
     const root = project === undefined ? undefined : resolve(project);
     const entries = this.list();
-    const ordered = [
+    const byProject = [
       ...entries.filter(entry => entry.project === undefined || entry.project === root),
       ...entries.filter(entry => entry.project !== undefined && entry.project !== root),
     ];
+    // Memories that match the request come first (Roman, Devanagari, or any
+    // spelling), so they survive the size budget; ties keep the project order.
+    const ordered = query.trim() === ''
+      ? byProject
+      : byProject
+        .map((entry, index) => ({ entry, index, score: matchScore(query, entry.text) }))
+        .sort((a, b) => b.score - a.score || a.index - b.index)
+        .map(item => item.entry);
     const chosen: MemoryEntry[] = [];
     let used = 0;
     for (const entry of ordered) {

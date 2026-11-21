@@ -679,7 +679,8 @@ async function prepareTurn(
   const history = options.session.messages();
   const detected = options.environment ??
     detectEnvironment(prompt === '' ? history : [...history, { role: 'user', content: prompt }]);
-  const memories = options.memory?.relevant(detected.activeProject) ?? [];
+  // Memories that match this request are kept first when they do not all fit.
+  const memories = options.memory?.relevant(detected.activeProject, undefined, prompt) ?? [];
   const environment = memories.length > 0
     ? { ...detected, memories: memories.map(entry => ({ text: entry.text, ...(entry.project ? { project: entry.project } : {}) })) }
     : detected;

@@ -44,6 +44,15 @@ test('secrets and long text are refused', async t => {
     assert.throws(() => memory.add(secret), /never remembered/);
   }
   assert.equal(looksSecret('The user keeps API docs in ~/docs'), false);
+  // Indian identifiers and Hinglish phrasing.
+  for (const secret of [
+    'mera otp 482913 hai', 'OTP: 4829', 'mera atm pin 4821 hai', 'cvv 123', 'password abc@1234 hai',
+    'card 4111 1111 1111 1111', 'Aadhaar 2345 6789 0123', 'PAN ABCPE1234F', 'gemini key AIzaSyA1234567890abcdefghijklmnopqrstu',
+  ]) assert.equal(looksSecret(secret), true, secret);
+  for (const fact of [
+    'Ghar ka PIN code 110001 hai', 'pincode 560034', 'Phone 9876543210 par call karna', 'Budget 25000 rupees', 'The order total was 1299',
+    'Tests run with pnpm check', 'Year 2026 plan', 'password reset ka link email par aata hai',
+  ]) assert.equal(looksSecret(fact), false, fact);
   assert.throws(() => memory.add('x'.repeat(301)), /under 300/);
 });
 
@@ -70,4 +79,14 @@ test('the remember tool saves a fact and the prompt shows remembered facts', asy
   assert.doesNotMatch(prompt, /Main project is KeylessRN/);
   const context = buildTurnContext(environment);
   assert.match(context, /What you remember about the user[\s\S]*  - Main project is KeylessRN\.\n  - Tests: pnpm check \(project: \/Users\/me\/shop\)/);
+});
+
+test('memories that match the request are kept first when they do not all fit', async t => {
+  const { memory } = await store(t);
+  memory.add('User likes cricket highlights on Sunday mornings.');
+  memory.add('Coffee without sugar, always.');
+  memory.add('User ki dukaan ka project ~/Projects/shop mein hai.');
+  const tight = memory.relevant(undefined, 80, 'दुकान वाला project kholo').map(entry => entry.text);
+  assert.deepEqual(tight, ['User ki dukaan ka project ~/Projects/shop mein hai.']);
+  assert.equal(memory.relevant(undefined, 80).map(entry => entry.text)[0], 'User likes cricket highlights on Sunday mornings.', 'without a request the order is unchanged');
 });

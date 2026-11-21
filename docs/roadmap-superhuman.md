@@ -21,4 +21,4 @@ Background research:
 | 4 | **Voices** | A Maya 2 Native (MLX) sidecar with two consistent cloned character voices. Kokoro stays as the instant fallback. Samples are played to the owner before switching. | planned |
 | 5 | **Talker and worker** | A small, fast model answers or acknowledges within about 1 s, while the main model works and its progress is spoken. | planned |
 | 6 | **Twin stage UI** | Glass look and responsive layout for laptop and external monitor (done, 2026-11-21). Still to do: A hologram avatar for each twin (WebGL point cloud, voice-reactive), presence modes (floating bar or notch), a sound design system, voiced onboarding, and a Visual Hub for structured answers. | planned |
-| 7 | **Mind** | Awareness that can speak first, with visible restraint. Memory search tuned for Hinglish (FTS5 plus a consonant skeleton). Memory extraction only from verified quotes. | planned |
+| 7 | **Mind** | Awareness that can speak first, with visible restraint. Memory search tuned for Hinglish (a consonant skeleton is done; FTS5 for larger stores is still to do). Memory extraction only from verified quotes. | planned |

@@ -34,6 +34,13 @@ All notable changes to Vyomara are listed here. Versions follow
   windows turn the task panel into a drawer, and very narrow ones show the
   navigation as a row of icons. Small labels are easier to read.
 
+### Memory
+- Memories that match what you ask come first, however they are spelled
+  (Roman Hinglish, Devanagari, or English: "dukaan" finds "दुकान").
+- One-time codes, card numbers, Aadhaar and PAN numbers, and Hinglish
+  phrasing like "mera otp 482913 hai" are never remembered; addresses with a
+  postal PIN code still are.
+
 ### Assistants
 - Vyom and Vyomara are the only assistants you talk to. Behind them works an
   inner team (Khoj for research, Yatra for travel, Kavach for Mac health,
