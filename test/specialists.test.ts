@@ -5,6 +5,7 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { buildSystemPrompt } from '../src/agent/system-prompt.ts';
 import { isPersonaId, PERSONAS, personaFor } from '../src/shared/persona.ts';
+import { isTeamMemberId, TEAM, type TeamMemberId } from '../src/agent/team.ts';
 import { parseFrontAppName, parseIdleSeconds, UsageSampler } from '../src/desktop/usage-sampler.ts';
 import { SqliteStore } from '../src/storage/sqlite-store.ts';
 import { ToolRegistry } from '../src/tools/contracts.ts';
@@ -13,27 +14,31 @@ import type { ActionToolPorts } from '../src/tools/action-tools.ts';
 
 const environment = { date: '2026-11-15', osRelease: 'test', home: '/Users/test', projectFolders: [] } as unknown as Parameters<typeof buildSystemPrompt>[0];
 
-test('the specialists are valid personas with a focus; the leads have none', () => {
-  for (const id of ['kavach', 'yatra', 'khoj', 'lipi'] as const) {
-    assert.ok(isPersonaId(id));
-    assert.ok(PERSONAS[id].focus !== undefined && PERSONAS[id].focus.length > 50);
-    assert.ok(PERSONAS[id].role.length > 0);
+test('only the twins are personas; the specialists are the inner team', () => {
+  assert.deepEqual(Object.keys(PERSONAS), ['vyom', 'vyomara']);
+  for (const id of ['kavach', 'yatra', 'khoj', 'lipi']) {
+    assert.ok(!isPersonaId(id), `${id} is not user-facing`);
+    assert.ok(isTeamMemberId(id));
+    assert.ok(TEAM[id as TeamMemberId].brief.length > 100);
+    assert.ok(TEAM[id as TeamMemberId].tools.size > 0);
+    assert.ok(!TEAM[id as TeamMemberId].tools.has('delegate'), 'members cannot delegate further');
   }
-  assert.equal(personaFor('vyom').focus, undefined);
-  assert.equal(personaFor('vyomara').focus, undefined);
-  assert.ok(!isPersonaId('stonic'));
+  assert.ok(!isPersonaId('toString'));
+  assert.ok(!isTeamMemberId('constructor'));
+  assert.equal(personaFor(undefined).id, 'vyom');
 });
 
-test('a specialist\'s focus and the user\'s character reach the system prompt', () => {
-  const kavach = buildSystemPrompt(environment, [], { persona: 'kavach' });
-  assert.match(kavach, /You are Kavach, the male AI assistant/);
-  assert.match(kavach, /guardian of this Mac/);
-  const withCharacter = buildSystemPrompt(environment, [], { persona: 'yatra', character: 'Call me boss. Short answers.' });
-  assert.match(withCharacter, /travel planner/);
+test('the twin knows their twin and the user\'s character reaches the system prompt', () => {
+  const vyom = buildSystemPrompt(environment, [], { persona: 'vyom' });
+  assert.match(vyom, /You are Vyom, the male AI assistant/);
+  assert.match(vyom, /your twin Vyomara/);
+  const withCharacter = buildSystemPrompt(environment, [], { persona: 'vyomara', character: 'Call me boss. Short answers.' });
+  assert.match(withCharacter, /your twin Vyom\b/);
   assert.match(withCharacter, /Your character, set by the user[\s\S]*Call me boss/);
-  const plain = buildSystemPrompt(environment, [], { persona: 'vyom' });
-  assert.doesNotMatch(plain, /Your character, set by the user/);
-  assert.doesNotMatch(plain, /guardian of this Mac/);
+  assert.doesNotMatch(vyom, /Your character, set by the user/);
+  assert.doesNotMatch(vyom, /inner team/, 'no team guidance without the delegate tool');
+  const withTeam = buildSystemPrompt(environment, [{ id: 'delegate', description: 'd', parameters: { type: 'object', properties: {}, additionalProperties: false } }], { persona: 'vyom' });
+  assert.match(withTeam, /inner team[\s\S]*Khoj \(khoj\)[\s\S]*Lipi \(lipi\)/);
 });
 
 test('the usage sampler parses macOS probes and nudges once per threshold', () => {

@@ -4,8 +4,9 @@ import type { PersonaId } from '../shared/persona.ts';
 import type { Logger } from '../types.ts';
 import { Session } from '../session/session.ts';
 import type { SessionMessage } from '../session/session.ts';
-import { primeAgent, runAgent, runExplorer } from '../agent/agent.ts';
+import { primeAgent, runAgent, runExplorer, runTeamMember } from '../agent/agent.ts';
 import type { ExplorePort } from '../tools/explore-tool.ts';
+import type { DelegatePort } from '../tools/delegate-tool.ts';
 import type { ToolActivity } from '../agent/agent.ts';
 import { OllamaProvider, PlaceholderProvider } from '../providers/provider.ts';
 import type { ModelProvider } from '../providers/provider.ts';
@@ -111,10 +112,12 @@ export function createProvider(config: AppConfig): ModelProvider {
     : new PlaceholderProvider();
 }
 
-function createTools(config: AppConfig, logger: Logger, memory: MemoryStore, options: RequestOptions, explore: ExplorePort = {}): ToolExecutor {
+function createTools(config: AppConfig, logger: Logger, memory: MemoryStore, options: RequestOptions, explore: ExplorePort = {}, delegate: DelegatePort = {}): ToolExecutor {
   return new ToolExecutor({
     registry: createDefaultToolRegistry(config, {
       explore,
+      // Always registered (an empty port when priming) so the tool list, and Ollama's cached prefix, never change.
+      delegate,
       ...(options.includeFilesystemTools === undefined ? {} : { includeFilesystemTools: options.includeFilesystemTools }),
       ...(options.fileOperationApproval ? { fileOperationApproval: options.fileOperationApproval } : {}),
       ...(options.actions ? { actions: options.actions } : {}),
@@ -161,16 +164,20 @@ export async function runRequest(
     const taskLogger = withPersistentAudit(logger, store);
     const memory = new MemoryStore(config.dataDirectory);
     const explore: ExplorePort = {};
-    const tools = createTools(config, taskLogger, memory, options, explore);
+    const delegate: DelegatePort = {};
+    const tools = createTools(config, taskLogger, memory, options, explore, delegate);
     const provider = createProvider(config);
-    explore.run = (task, signal) => runExplorer(task, signal, {
+    const helperOptions = {
       provider,
       tools,
       config,
       logger: taskLogger,
       ...(options.persona ? { persona: options.persona } : {}),
+      ...(options.character ? { character: options.character } : {}),
       ...(options.onToolActivity ? { onToolActivity: options.onToolActivity } : {}),
-    });
+    };
+    explore.run = (task, signal) => runExplorer(task, signal, helperOptions);
+    delegate.run = (member, task, signal) => runTeamMember(member, task, signal, { ...helperOptions, memory });
 
     let response: string | undefined;
     let requestError: unknown;

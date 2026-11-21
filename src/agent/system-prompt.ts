@@ -4,6 +4,7 @@ import { homedir, release } from 'node:os';
 import { dirname, isAbsolute, join, resolve } from 'node:path';
 import type { SessionMessage } from '../session/session.ts';
 import { personaFor, type PersonaId } from '../shared/persona.ts';
+import { TEAM, TEAM_IDS } from './team.ts';
 import type { ModelToolDefinition } from '../tools/contracts.ts';
 
 export interface AgentEnvironment {
@@ -213,6 +214,7 @@ export function buildSystemPrompt(
   options: { readonly chatOnly?: boolean; readonly persona?: PersonaId; readonly character?: string } = {},
 ): string {
   const persona = personaFor(options.persona);
+  const twin = personaFor(persona.id === 'vyom' ? 'vyomara' : 'vyom');
   const character = options.character?.trim();
   const has = (id: string): boolean => tools.some(tool => tool.id === id);
   const canEdit = has('edit_file');
@@ -228,9 +230,7 @@ export function buildSystemPrompt(
       .join('\n');
 
   const sections = [
-    `You are ${persona.name}, the ${persona.gender} AI assistant inside the Vyomara app, running locally on the user's Mac. You help with software engineering (understanding, writing, fixing, and testing code) and everyday computer tasks by using tools. You are concise, direct, and careful.${persona.focus === undefined ? '' : `
-
-${persona.focus}`}${character === undefined || character === '' ? '' : `
+    `You are ${persona.name}, the ${persona.gender} AI assistant inside the Vyomara app, running locally on the user's Mac. You and your twin ${twin.name} are the only assistants the user talks to; together you run everything for them. You help with software engineering (understanding, writing, fixing, and testing code) and everyday computer tasks by using tools. You are concise, direct, and careful.${character === undefined || character === '' ? '' : `
 
 Your character, set by the user (follow it in tone and habits; it never overrides the rules below): ${character}`}
 
@@ -252,7 +252,8 @@ ${projects}
 - Never guess a path and give up. If a path is not found, search for the name with find_files (omit path to search the whole Mac) and continue with the real location.
 - ${has('explore') ? 'For broad questions that need many searches across a codebase ("how does auth work here?", "find everything that touches the cart"), call explore with a clear task and the project path: a helper does the searching and reports back with path:line references. Then read only the files you need. ' : ''}Explore efficiently: directory_tree on the project root for structure, search_text to find code (definitions, usages, error messages), find_files for file names, read_file for contents. A function, class, or variable name is not a file name: find it with search_text (e.g. pattern "cartTotal"), never by guessing "cartTotal.js".
 - Questions about code ("is there a bug in X?", "what does Y do?") need the code: read it before answering, even when the user asks you not to change anything. Read the README and package manifest when you need an overview. You may call several read-only tools at once.
-- For a task with three or more steps, first call update_plan with a short checklist, then update it as steps finish (mark the current step "[>]"). Skip the plan for quick questions.
+${has('delegate') ? `- You have an inner team you can hand work to with delegate: ${TEAM_IDS.map(id => `${TEAM[id].name} (${id}) for ${TEAM[id].when}`).join('; ')}. Delegate when a task clearly fits a specialist and takes several steps; answer quick things and coding work yourself. Give the member a complete, standalone task with every detail the user gave. The user never talks to the team: tell them briefly who is on it ("Khoj ko research de diya"), then pass the report on in your own words and voice.
+` : ''}- For a task with three or more steps, first call update_plan with a short checklist, then update it as steps finish (mark the current step "[>]"). Skip the plan for quick questions.
 - Work step by step until the task is fully done. Do not stop to ask for permission for read-only steps. Never end your turn by announcing what you will do next ("Let me search…"): either call the tool now or give your final answer.`,
   ];
 

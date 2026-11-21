@@ -15,6 +15,7 @@ import { CHARS_PER_TOKEN, fitMessagesToBudget, summaryCut, transcriptForSummary 
 import { buildSystemPrompt, buildTurnContext, carriesProjectInstructions, detectEnvironment, spokenRequestNote } from './system-prompt.ts';
 import { expandSlashCommand, hooksFor } from './project-extras.ts';
 import type { PersonaId } from '../shared/persona.ts';
+import { isTeamMemberId, TEAM, type TeamMemberId } from './team.ts';
 import type { MemoryStore } from '../storage/memory-store.ts';
 import { urlsIn, verifyLinks } from '../shared/link-check.ts';
 import { LinkAliases } from '../shared/link-alias.ts';
@@ -64,6 +65,8 @@ export interface AgentOptions {
    * the full tool list, so the cached prompt matches; others are refused.
    */
   readonly allowedTools?: ReadonlySet<string>;
+  /** How a helper refers to itself when it asks for a tool outside allowedTools. */
+  readonly helperRole?: string;
   /** Which assistant (name, gender, focus) answers. */
   readonly persona?: PersonaId;
   /** User-written character for that assistant, woven into the system prompt. */
@@ -142,6 +145,10 @@ export function describeToolCall(toolId: string, args: Readonly<Record<string, u
       return `Git ${String(args.action ?? 'status')}${args.target ? ` ${clip(String(args.target), 40)}` : ''} in ${shortPath(args.path)}`;
     case 'explore':
       return `Asking a helper: ${clip(String(args.task ?? ''), 60)}`;
+    case 'delegate': {
+      const member = isTeamMemberId(String(args.member ?? '').toLowerCase()) ? TEAM[String(args.member).toLowerCase() as TeamMemberId].name : 'the team';
+      return `Handing to ${member}: ${clip(String(args.task ?? ''), 60)}`;
+    }
     case 'command_output':
       return args.action === 'stop' ? `Stopping background command ${String(args.id ?? '')}` : args.action === 'list' ? 'Listing background commands' : `Reading output of ${String(args.id ?? '')}`;
     case 'check_problems':
@@ -544,7 +551,7 @@ const EXPLORE_BRIEF = 'You are a read-only research helper for another assistant
 export async function runExplorer(
   task: string,
   signal: AbortSignal,
-  options: Pick<AgentOptions, 'provider' | 'tools' | 'config' | 'logger' | 'persona' | 'environment' | 'onToolActivity'>,
+  options: Pick<AgentOptions, 'provider' | 'tools' | 'config' | 'logger' | 'persona' | 'character' | 'environment' | 'onToolActivity'>,
 ): Promise<string> {
   const config = { ...options.config, maxAgentIterations: Math.min(options.config.maxAgentIterations, 16), maxToolCalls: Math.min(options.config.maxToolCalls, 30) };
   const report = await runAgent(`${EXPLORE_BRIEF}\n\nTask: ${task}`, signal, {
@@ -555,8 +562,41 @@ export async function runExplorer(
     logger: options.logger,
     allowedTools: EXPLORE_TOOLS,
     ...(options.persona ? { persona: options.persona } : {}),
+    // The twin's character is part of the system prompt: keep it so the cached prefix matches.
+    ...(options.character ? { character: options.character } : {}),
     ...(options.environment ? { environment: options.environment } : {}),
     ...(options.onToolActivity ? { onToolActivity: activity => options.onToolActivity?.({ ...activity, label: `Explorer: ${activity.label}` }) } : {}),
+  });
+  return stripAppFooters(report).slice(0, 8_000);
+}
+
+/**
+ * Run a member of the twins' inner team on a standalone task, in its own
+ * context, and return its report. The member keeps the twin's system prompt
+ * and tool list (so the cached prefix holds); its role comes in the first
+ * message and its whitelist is enforced. Effects still ask the user.
+ */
+export async function runTeamMember(
+  memberId: TeamMemberId,
+  task: string,
+  signal: AbortSignal,
+  options: Pick<AgentOptions, 'provider' | 'tools' | 'config' | 'logger' | 'persona' | 'character' | 'environment' | 'onToolActivity' | 'memory'>,
+): Promise<string> {
+  const member = TEAM[memberId];
+  const config = { ...options.config, maxAgentIterations: Math.min(options.config.maxAgentIterations, 20), maxToolCalls: Math.min(options.config.maxToolCalls, 40) };
+  const report = await runAgent(`${member.brief}\n\nTask: ${task}`, signal, {
+    provider: options.provider,
+    tools: options.tools,
+    config,
+    session: new Session(),
+    logger: options.logger,
+    allowedTools: member.tools,
+    helperRole: `${member.name}, the ${member.role} specialist`,
+    ...(options.persona ? { persona: options.persona } : {}),
+    ...(options.character ? { character: options.character } : {}),
+    ...(options.memory ? { memory: options.memory } : {}),
+    ...(options.environment ? { environment: options.environment } : {}),
+    ...(options.onToolActivity ? { onToolActivity: activity => options.onToolActivity?.({ ...activity, label: `${member.name}: ${activity.label}` }) } : {}),
   });
   return stripAppFooters(report).slice(0, 8_000);
 }
@@ -916,7 +956,7 @@ async function runAgentTask(
         session.add({
           role: 'tool',
           toolId: call.toolId,
-          content: JSON.stringify({ ok: false, error: `You are a read-only helper: ${call.toolId} is not available to you. Use only ${[...options.allowedTools].join(', ')}, then report what you found.` }),
+          content: JSON.stringify({ ok: false, error: `You are ${options.helperRole ?? 'a read-only helper'}: ${call.toolId} is not available to you. Use only ${[...options.allowedTools].join(', ')}, then report what you found.` }),
         });
         continue;
       }

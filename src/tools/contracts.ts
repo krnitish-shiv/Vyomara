@@ -52,6 +52,11 @@ export interface Tool<Input, Output> {
   readonly inputError?: (value: unknown) => string | undefined;
   readonly validateOutput: (value: unknown) => value is Output;
   readonly run: (input: Input, signal: AbortSignal) => Promise<Output>;
+  /**
+   * Runs a helper agent (several model steps, maybe waiting on approvals), so
+   * it gets the long ceiling instead of the read-tool timeout. Stop still cancels it.
+   */
+  readonly longRunning?: true;
 }
 
 export type RegisteredTool = Tool<unknown, unknown>;

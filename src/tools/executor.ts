@@ -111,7 +111,7 @@ export class ToolExecutor {
         toolSignal => tool.run(input, toolSignal),
         // Tools that wait for a human decision get a long ceiling; Stop still
         // cancels them immediately. Commands enforce their own run timeout.
-        tool.effect === 'read'
+        tool.effect === 'read' && tool.longRunning !== true
           ? this.options.config.toolTimeoutMs
           : APPROVAL_GATED_TIMEOUT_MS,
         signal,

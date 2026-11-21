@@ -10,6 +10,7 @@ import { registerUtilityTools } from './utility-tools.ts';
 import { registerGitTools } from './git-tools.ts';
 import { registerProblemsTool } from './problems-tool.ts';
 import { registerExploreTool, type ExplorePort } from './explore-tool.ts';
+import { registerDelegateTool, type DelegatePort } from './delegate-tool.ts';
 import { registerMcpTools } from './mcp-tools.ts';
 import { registerSystemTool } from './system-tool.ts';
 import { registerVscodeTool } from './vscode-tool.ts';
@@ -26,6 +27,8 @@ export interface ToolRegistryOptions {
   readonly memory?: MemoryStore;
   /** Enables explore: a read-only helper agent; `run` is filled in once the request's provider exists. */
   readonly explore?: ExplorePort;
+  /** Enables delegate: the twins' inner team; `run` is filled in once the request's provider exists. */
+  readonly delegate?: DelegatePort;
 }
 
 export function createDefaultToolRegistry(
@@ -48,6 +51,7 @@ export function createDefaultToolRegistry(
     if (includeFilesystemTools) registerVscodeTool(registry, config, options.actions);
     if (options.actions.system) registerSystemTool(registry, options.actions.system, options.actions.approval);
   }
+  if (options.delegate) registerDelegateTool(registry, options.delegate);
   // Clock, calculator, units, dates, and Mac status always; weather, rates, and versions with web access.
   registerUtilityTools(registry, options.actions);
   // MCP tools last, in whatever room the tool limit leaves.

@@ -16,6 +16,7 @@ export function registerExploreTool(registry: ToolRegistry, port: ExplorePort): 
   const tool: Tool<Input, Record<string, unknown>> = {
     id: 'explore',
     effect: 'read',
+    longRunning: true,
     description: 'Hand a self-contained research question about code to a read-only helper that searches and reads files on its own and reports back the answer with path:line references, e.g. "In /Users/me/Projects/shop, where is the cart total computed and what calls it?". Use it for broad searches across many files, so your own context stays small. Include the project path. It cannot change anything.',
     parameters: {
       type: 'object',

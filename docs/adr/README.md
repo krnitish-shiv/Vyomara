@@ -38,6 +38,7 @@ proposed decisions must not be presented as current implementation choices.
 | [0026](./0026-cached-prompt-and-built-in-web-search.md) | Cached system prompt, per-turn context, built-in web search | Accepted |
 | [0027](./0027-vscode-mac-control-and-wider-github-browser.md) | VS Code, Mac control, wider GitHub and browser tools | Accepted |
 | [0028](./0028-natural-voice.md) | Natural local voice (Kokoro) beside the system voice | Accepted |
+| [0029](./0029-twins-and-inner-team.md) | Two twins in front, an inner team behind them | Accepted |
 
 ## Open decisions
 

@@ -13,8 +13,12 @@ All notable changes to Vyomara are listed here. Versions follow
   suppression, so noise no longer turns into invented words.
 
 ### Assistants
-- Specialists Kavach, Yatra, Khoj, and Lipi beside Vyom and Vyomara
-  (`--agent` in the CLI); a per-assistant character stored for the prompt.
+- Vyom and Vyomara are the only assistants you talk to. Behind them works an
+  inner team (Khoj for research, Yatra for travel, Kavach for Mac health,
+  Lipi for writing): the twins hand tasks over with the new `delegate` tool
+  and pass the report back, and you see each step ("Yatra: Getting the
+  weather…") (ADR-0029). A per-twin character is stored for the prompt.
+- Helper agents (`explore`, `delegate`) no longer stop after 30 seconds.
 - `screen_time`: per-app time recorded locally while the app runs, and a
   gentle break reminder after three hours of continuous use.
 

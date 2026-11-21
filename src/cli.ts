@@ -210,7 +210,7 @@ function printStorageUsage(): void {
     '  pnpm dev                       (interactive chat)',
     '  pnpm dev -- "your request"',
     '  pnpm dev -- --model qwen3:14b "your request"',
-    '  pnpm dev -- --agent kavach|yatra|khoj|lipi|vyom|vyomara "your request"',
+    '  pnpm dev -- --agent vyom|vyomara "your request"',
     '  pnpm dev -- --session <session-id> "your next turn"',
     '  pnpm dev -- --sessions list|show <session-id>|delete <session-id> [--confirm]',
     '  pnpm dev -- --memory list|show <memory-id>|save "content" --confirm|delete <memory-id> --confirm',
@@ -344,7 +344,7 @@ async function main(): Promise<void> {
     else if (flag === '--agent') {
       const id = value.toLowerCase();
       if (!isPersonaId(id)) {
-        console.error(`Unknown assistant "${value}". Choose one of: ${Object.keys(PERSONAS).join(', ')}.`);
+        console.error(`Unknown assistant "${value}". Choose one of: ${Object.keys(PERSONAS).join(', ')} (the inner team works through them).`);
         process.exitCode = 2;
         return;
       }
