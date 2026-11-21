@@ -565,3 +565,12 @@ test('unload asks Ollama to free the model now and never throws', async () => {
   });
   await offline.unload();
 });
+
+test('gpt-oss gets a reasoning level instead of true/false', async () => {
+  const { ollamaThinkValue } = await import('../src/providers/provider.ts');
+  assert.equal(ollamaThinkValue('gpt-oss:20b', false), 'low');
+  assert.equal(ollamaThinkValue('gpt-oss:120b', true), 'medium');
+  assert.equal(ollamaThinkValue('hf.co/unsloth/gpt-oss-20b-GGUF:Q4_K_M', false), 'low');
+  assert.equal(ollamaThinkValue('qwen3:14b', false), false);
+  assert.equal(ollamaThinkValue('qwen3:14b', undefined), undefined);
+});
