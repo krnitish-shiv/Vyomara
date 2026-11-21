@@ -9,6 +9,7 @@ import type {
   DesktopPipState,
   DesktopPlan,
   DesktopSpeechRecognitionEvent,
+  DesktopLiveSpeechEvent,
   DesktopToolActivity,
   VyomaraDesktopApi,
 } from '../desktop/contracts.ts';
@@ -125,7 +126,7 @@ const api: VyomaraDesktopApi = {
   getSpeechSetupStatus() {
     return ipcRenderer.invoke('vyomara:speech-setup-status');
   },
-  selectSpeechModel(model: 'fast' | 'best') {
+  selectSpeechModel(model: 'fast' | 'best' | 'hinglish') {
     return ipcRenderer.invoke('vyomara:speech-model-select', model);
   },
   downloadSpeechModel() {
@@ -152,6 +153,16 @@ const api: VyomaraDesktopApi = {
   },
   stopSpeaking() {
     return ipcRenderer.invoke('vyomara:speech-stop');
+  },
+  onLiveSpeech(listener: (event: DesktopLiveSpeechEvent) => void) {
+    const handler = (_event: Electron.IpcRendererEvent, liveEvent: DesktopLiveSpeechEvent): void => {
+      listener(liveEvent);
+    };
+    ipcRenderer.on('vyomara:live-speech', handler);
+    return () => ipcRenderer.removeListener('vyomara:live-speech', handler);
+  },
+  liveSpeechDone(requestId: string) {
+    return ipcRenderer.invoke('vyomara:live-speech-done', requestId);
   },
   approveAllFileOperations(id: string) {
     return ipcRenderer.invoke('vyomara:file-operation-approve-all', id);

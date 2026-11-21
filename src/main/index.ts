@@ -57,7 +57,10 @@ import { ShellCommandRunner } from '../tools/command-runner.ts';
 import { HttpWebClient } from '../tools/web-client.ts';
 import { ApprovalMemory, DEFAULT_BROWSER, grantId, parseGrantId } from '../tools/action-tools.ts';
 import { MacSpeechError, MacSpeechRunner } from '../desktop/mac-speech.ts';
-import { LocalSpeechError, LocalWhisperRunner, resolveWhisperBinary, SPEECH_MODELS } from '../desktop/local-whisper.ts';
+import { isSpeechModelId, LocalSpeechError, LocalWhisperRunner, resolveWhisperBinary, SPEECH_MODEL_IDS, SPEECH_MODELS } from '../desktop/local-whisper.ts';
+import { SpeechQueue } from '../desktop/speech-queue.ts';
+import type { PreparedSpeech } from '../desktop/mac-speech.ts';
+import { ClauseStream } from '../shared/clause-stream.ts';
 import type { SpeechModelId } from '../desktop/local-whisper.ts';
 import { LocalWhisperServer, resolveWhisperServer } from '../desktop/whisper-server.ts';
 import type { LocalWhisperEvent } from '../desktop/local-whisper.ts';
@@ -82,6 +85,50 @@ const mcpAllowed = new Set<string>();
 let approvalMemory = new ApprovalMemory();
 const naturalVoice = new NaturalVoice(join(app.getPath('userData'), 'natural-voice'));
 const macSpeechRunner = new MacSpeechRunner(undefined, undefined, naturalVoice);
+
+/**
+ * One speaker at a time: clauses of a live reply and one-off lines (approval
+ * questions, greetings) take turns instead of failing as "already speaking".
+ */
+let speechTurn: Promise<unknown> = Promise.resolve();
+function inSpeechTurn<T>(speak: () => Promise<T>): Promise<T> {
+  const run = speechTurn.then(speak, speak);
+  speechTurn = run.catch(() => undefined);
+  return run;
+}
+
+/** The spoken reply being read while the model is still writing it (voice requests). */
+interface LiveSpeech {
+  readonly requestId: string;
+  readonly clauses: ClauseStream;
+  readonly queue: SpeechQueue<PreparedSpeech>;
+}
+let liveSpeech: LiveSpeech | undefined;
+
+function startLiveSpeech(requestId: string): LiveSpeech {
+  void liveSpeech?.queue.cancel();
+  const gender = personaFor(persona).gender;
+  const live: LiveSpeech = {
+    requestId,
+    clauses: new ClauseStream(),
+    queue: new SpeechQueue<PreparedSpeech>({
+      prepare: text => macSpeechRunner.prepare(text, gender),
+      play: prepared => inSpeechTurn(() => macSpeechRunner.play(prepared)),
+      discard: prepared => macSpeechRunner.discard(prepared),
+    }, speaking => {
+      if (mainWindow && !mainWindow.isDestroyed()) mainWindow.webContents.send('vyomara:live-speech', { requestId, speaking });
+    }),
+  };
+  liveSpeech = live;
+  return live;
+}
+
+function finishLiveSpeech(live: LiveSpeech): void {
+  for (const clause of live.clauses.end()) live.queue.enqueue(clause);
+  void live.queue.close().finally(() => {
+    if (liveSpeech === live) liveSpeech = undefined;
+  });
+}
 /** Approved file changes per request, so "undo karo" can put them back. */
 /** Drives the user's Chrome for the browser tool, when Chrome is installed. */
 const chromeBrowser = existsSync('/Applications/Google Chrome.app') ? new ChromeBrowser() : undefined;
@@ -175,7 +222,7 @@ function getLocalWhisperRunner(): LocalWhisperRunner {
 
 async function speechStatus() {
   const runner = getLocalWhisperRunner();
-  const models = await Promise.all(Object.values(SPEECH_MODELS).map(async model => ({
+  const models = await Promise.all(SPEECH_MODEL_IDS.map(id => SPEECH_MODELS[id]).map(async model => ({
     id: model.id,
     label: model.label,
     approxMegabytes: model.approxMegabytes,
@@ -282,24 +329,30 @@ async function saveVoiceListeningPreference(enabled: boolean): Promise<void> {
   const path = voicePreferencePath();
   await mkdir(join(app.getPath('userData')), { recursive: true, mode: 0o700 });
   const temporaryPath = `${path}.tmp`;
-  await writeFile(temporaryPath, JSON.stringify({ enabled, model: speechModel }), { encoding: 'utf8', mode: 0o600 });
+  // Remember whether this choice was made with the Hinglish model available, so it is not switched back automatically.
+  const chosenWithHinglish = await new LocalWhisperRunner({ modelDirectory: speechModelDirectory(), model: 'hinglish' }).modelAvailable().catch(() => false);
+  await writeFile(temporaryPath, JSON.stringify({ enabled, model: speechModel, chosenWithHinglish }), { encoding: 'utf8', mode: 0o600 });
   await rename(temporaryPath, path);
 }
 
 async function readVoiceListeningPreference(): Promise<boolean> {
-  let saved: { enabled?: unknown; model?: unknown } = {};
+  let saved: { enabled?: unknown; model?: unknown; chosenWithHinglish?: unknown } = {};
   try {
     const value: unknown = JSON.parse(await readFile(voicePreferencePath(), 'utf8'));
     if (typeof value !== 'object' || value === null || !('enabled' in value) || typeof value.enabled !== 'boolean') {
       throw new Error('Saved voice-listening preference is invalid.');
     }
-    saved = value as { enabled?: unknown; model?: unknown };
+    saved = value as { enabled?: unknown; model?: unknown; chosenWithHinglish?: unknown };
   } catch (error) {
     if (!(error instanceof Error && 'code' in error && error.code === 'ENOENT')) throw error;
   }
-  if (saved.model === 'fast' || saved.model === 'best') {
-    speechModel = saved.model;
-  } else {
+  if (isSpeechModelId(saved.model)) speechModel = saved.model;
+  // The Hinglish model hears Hindi and mixed speech far better (and ~5x faster)
+  // than the others: use it whenever it is installed, unless the user picked
+  // it away after it was installed.
+  const hinglish = new LocalWhisperRunner({ modelDirectory: speechModelDirectory(), model: 'hinglish' });
+  if (saved.model !== 'hinglish' && saved.chosenWithHinglish !== true && await hinglish.modelAvailable().catch(() => false)) speechModel = 'hinglish';
+  else if (!isSpeechModelId(saved.model)) {
     // No choice saved yet: prefer the multilingual model when it is installed.
     const best = new LocalWhisperRunner({ modelDirectory: speechModelDirectory(), model: 'best' });
     if (await best.modelAvailable().catch(() => false)) speechModel = 'best';
@@ -832,6 +885,8 @@ ipcMain.handle('vyomara:chat-send', async (_event, input: unknown) => {
   const send = (channel: string, payload: unknown): void => {
     if (mainWindow && !mainWindow.isDestroyed()) mainWindow.webContents.send(channel, payload);
   };
+  // Voice requests are read aloud clause by clause while the reply is written.
+  const live = request.voice ? startLiveSpeech(request.requestId) : undefined;
   try {
     const result = await runRequest(
       undoNote === undefined ? request.prompt : `${undoNote}\n\n${request.prompt}`,
@@ -846,15 +901,20 @@ ipcMain.handle('vyomara:chat-send', async (_event, input: unknown) => {
         persona,
         ...(characters[persona] === undefined ? {} : { character: characters[persona] }),
         ...(macSpeechRunner.naturalVoiceReady ? { devanagariVoice: true } : {}),
-        onText: text => send('vyomara:chat-text', { requestId: request.requestId, text }),
+        onText: text => {
+          send('vyomara:chat-text', { requestId: request.requestId, text });
+          if (live) for (const clause of live.clauses.push(text)) live.queue.enqueue(clause);
+        },
         onToolActivity: activity => send('vyomara:tool-activity', { requestId: request.requestId, ...activity }),
         onPlan: steps => send('vyomara:plan', { requestId: request.requestId, steps }),
         ...desktopToolOptions(desktopConfig, approvals, actionApprovals),
       },
     );
     changeJournal.setSession(request.requestId, result.sessionId);
-    return result;
+    if (live) finishLiveSpeech(live);
+    return { ...result, ...(live ? { spokenLive: true } : {}) };
   } catch (error) {
+    if (live) void live.queue.cancel();
     throw new Error(publicErrorMessage(error));
   } finally {
     activeRequest = undefined;
@@ -1081,7 +1141,7 @@ ipcMain.handle('vyomara:session-delete', (_event, input: unknown) => {
 ipcMain.handle('vyomara:speech-setup-status', () => speechStatus());
 
 ipcMain.handle('vyomara:speech-model-select', async (_event, input: unknown) => {
-  if (input !== 'fast' && input !== 'best') throw new Error('Choose a known speech model.');
+  if (!isSpeechModelId(input)) throw new Error('Choose a known speech model.');
   if (input === speechModel) return speechStatus();
   speechModel = input;
   localWhisperRunner = undefined;
@@ -1196,13 +1256,24 @@ ipcMain.handle('vyomara:speech-transcribe', async (event, input: unknown) => {
 ipcMain.handle('vyomara:speech-speak', async (_event, input: unknown) => {
   // The renderer stops recording while Vyom speaks, so the reply is not heard as a command.
   try {
-    return await macSpeechRunner.speak(input, personaFor(persona).gender);
+    return await inSpeechTurn(() => macSpeechRunner.speak(input, personaFor(persona).gender));
   } catch (error) {
     throw new Error(publicErrorMessage(error));
   }
 });
 
-ipcMain.handle('vyomara:speech-stop', () => macSpeechRunner.stop());
+ipcMain.handle('vyomara:speech-stop', () => {
+  const live = liveSpeech;
+  if (live) void live.queue.cancel();
+  return macSpeechRunner.stop() || live !== undefined;
+});
+
+/** Resolves when the live spoken reply for this request has finished (or at once if none). */
+ipcMain.handle('vyomara:live-speech-done', async (event, input: unknown) => {
+  if (event.sender !== mainWindow?.webContents) throw new Error('Speech request is invalid.');
+  const live = liveSpeech;
+  if (live && live.requestId === input) await live.queue.close();
+});
 
 ipcMain.handle('vyomara:persona-get', (event) => {
   if (event.sender !== mainWindow?.webContents) throw new Error('Assistant request is invalid.');

@@ -97,3 +97,26 @@ test('transcripts in an unexpected script trigger the Hindi fallback', () => {
   assert.equal(hasUnexpectedScript('Open the shop project in VS Code.'), false);
   assert.equal(hasUnexpectedScript('Commit karo — “done”!'), false);
 });
+
+test('polished transcripts drop invented subtitle phrases and fix the twins\' names', async () => {
+  const { polishTranscript } = await import('../src/desktop/whisper-server.ts');
+  assert.equal(polishTranscript('Thanks for watching!'), '');
+  assert.equal(polishTranscript(' सब्सक्राइब करें। '), '');
+  assert.equal(polishTranscript('Vyom, Vyomara.', 'Vyom, Vyomara.'), '', 'a prompt echoed on silence is dropped');
+  assert.equal(polishTranscript('Thanks for watching the build, now deploy it'), 'Thanks for watching the build, now deploy it', 'only whole phrases are dropped');
+  assert.equal(polishTranscript('viom, shop project kholo'), 'Vyom, shop project kholo');
+  assert.equal(polishTranscript('Hey vyomra kya haal hai'), 'Hey Vyomara kya haal hai');
+  assert.equal(polishTranscript('vio mara, music bajao'), 'Vyomara, music bajao');
+  assert.equal(polishTranscript('वियोमारा, गाना चलाओ'), 'व्योमारा, गाना चलाओ');
+  assert.equal(polishTranscript('go beyond the limits via the API'), 'go beyond the limits via the API');
+  assert.equal(polishTranscript('Thank you'), 'Thank you', 'a real short reply stays');
+  // Mishearings seen in the A/B test (docs/research/voice-and-local-models-2026-11.md).
+  assert.equal(polishTranscript('Vyaanm shop project kholo aur test chalaadoo.'), 'Vyom shop project kholo aur test chalaadoo.');
+  assert.equal(polishTranscript('Vivaara aaj mausam kaisa hai?'), 'Vyomara aaj mausam kaisa hai?');
+  assert.equal(polishTranscript('Viyo mera code thik kar do'), 'Vyom mera code thik kar do');
+  assert.equal(polishTranscript('Vyo, aaj mausam kaisa hai?'), 'Vyom, aaj mausam kaisa hai?');
+  assert.equal(polishTranscript('विव मारा, आज मौसम कैसा है?'), 'व्योमारा, आज मौसम कैसा है?');
+  assert.equal(polishTranscript('व्याम शोप प्रोजेक्ट कोलो'), 'व्योम शोप प्रोजेक्ट कोलो');
+  assert.equal(polishTranscript('Open the shop project in V s code and run the tests.'), 'Open the shop project in VS Code and run the tests.');
+  assert.equal(polishTranscript('the video was good'), 'the video was good');
+});

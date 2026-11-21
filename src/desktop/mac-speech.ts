@@ -7,6 +7,11 @@ export type MacSpeechResult =
   | { readonly status: 'completed' }
   | { readonly status: 'cancelled' };
 
+/** A clause ready to play (see MacSpeechRunner.prepare). */
+export type PreparedSpeech =
+  | { readonly kind: 'file'; readonly file: string }
+  | { readonly kind: 'say'; readonly text: string; readonly voice: string | undefined };
+
 export class MacSpeechError extends Error {
   constructor(message: string) {
     super(message);
@@ -144,6 +149,62 @@ export class MacSpeechRunner {
     if (stops !== this.#stopCount) return { status: 'cancelled' };
     const spoken = typeof text === 'string' ? textForVoice(text, gender) : text;
     return this.#speak(spoken, voice);
+  }
+
+  /**
+   * Get one clause ready to play without playing it: synthesized to a file by
+   * the natural voice, or text and voice for `say`. Lets a spoken reply
+   * prepare its next clause while the current one plays. Undefined when
+   * stopped meanwhile.
+   */
+  async prepare(text: string, gender: 'male' | 'female' = 'male'): Promise<PreparedSpeech | undefined> {
+    const stops = this.#stopCount;
+    if (this.#platform === 'darwin' && this.#natural?.ready) {
+      const spoken = textForNatural(text);
+      if (spoken.length > 0 && spoken.length <= maximumSpeechChars && spoken.trim() === spoken) {
+        const controller = new AbortController();
+        this.#synthesis = controller;
+        this.#starting += 1;
+        try {
+          const file = await this.#natural.synthesize(spoken, gender, controller.signal);
+          if (stops !== this.#stopCount) {
+            void rm(file, { force: true });
+            return undefined;
+          }
+          return { kind: 'file', file };
+        } catch {
+          if (controller.signal.aborted || stops !== this.#stopCount) return undefined;
+          // Natural voice failed: this clause uses the system voice instead.
+        } finally {
+          this.#starting -= 1;
+          if (this.#synthesis === controller) this.#synthesis = undefined;
+        }
+      }
+    }
+    this.#starting += 1;
+    let voice: string | undefined;
+    try {
+      voice = this.#platform === 'darwin' && this.#spawnProcess === spawnMacSpeechProcess ? await voiceFor(gender) : undefined;
+    } finally {
+      this.#starting -= 1;
+    }
+    if (stops !== this.#stopCount) return undefined;
+    return { kind: 'say', text: textForVoice(text, gender), voice };
+  }
+
+  /** Play a clause from prepare(). */
+  async play(prepared: PreparedSpeech): Promise<MacSpeechResult> {
+    if (prepared.kind === 'say') return this.#speak(prepared.text, prepared.voice);
+    try {
+      return await this.#run('/usr/bin/afplay', [prepared.file]);
+    } finally {
+      void rm(prepared.file, { force: true });
+    }
+  }
+
+  /** Throw away a prepared clause that will not be played. */
+  discard(prepared: PreparedSpeech): void {
+    if (prepared.kind === 'file') void rm(prepared.file, { force: true });
   }
 
   /** Synthesize with the natural voice and play the file; undefined when it could not (use the system voice). */

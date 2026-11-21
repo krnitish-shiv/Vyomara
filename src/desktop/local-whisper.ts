@@ -5,6 +5,7 @@ import { spawn } from 'node:child_process';
 import { Transform } from 'node:stream';
 import { pipeline } from 'node:stream/promises';
 import { join } from 'node:path';
+import { HINGLISH_MODEL_FILE, hinglishModelReady, installHinglishModel } from './hinglish-model.ts';
 
 export type LocalWhisperEvent =
   | { readonly type: 'listening' }
@@ -30,7 +31,13 @@ export class LocalSpeechError extends Error {
   }
 }
 
-export type SpeechModelId = 'fast' | 'best';
+export type SpeechModelId = 'fast' | 'best' | 'hinglish';
+
+export const SPEECH_MODEL_IDS: readonly SpeechModelId[] = ['hinglish', 'best', 'fast'];
+
+export function isSpeechModelId(value: unknown): value is SpeechModelId {
+  return typeof value === 'string' && (SPEECH_MODEL_IDS as readonly string[]).includes(value);
+}
 
 export interface SpeechModelInfo {
   readonly id: SpeechModelId;
@@ -46,6 +53,11 @@ export interface SpeechModelInfo {
    * Devanagari and keeps English words in English.
    */
   readonly language: 'en' | 'hi';
+  /**
+   * Built on this Mac from a pinned source (converted and quantized) rather
+   * than downloaded ready-made; checked against the checksum recorded when built.
+   */
+  readonly builtLocally?: true;
 }
 
 export const SPEECH_MODELS: Readonly<Record<SpeechModelId, SpeechModelInfo>> = {
@@ -57,6 +69,17 @@ export const SPEECH_MODELS: Readonly<Record<SpeechModelId, SpeechModelInfo>> = {
     maxBytes: 180 * 1024 * 1024,
     approxMegabytes: 148,
     language: 'en',
+  },
+  hinglish: {
+    id: 'hinglish',
+    label: 'Hinglish: Hindi and mixed speech written in Roman letters (recommended)',
+    file: HINGLISH_MODEL_FILE,
+    sha1: '',
+    maxBytes: 600 * 1024 * 1024,
+    approxMegabytes: 1_600,
+    // Fine-tuned to write Hindi and Hinglish in Roman letters when told "en".
+    language: 'en',
+    builtLocally: true,
   },
   best: {
     id: 'best',
@@ -142,6 +165,7 @@ export class LocalWhisperRunner {
   }
 
   async modelAvailable(): Promise<boolean> {
+    if (this.model.builtLocally) return hinglishModelReady(this.#modelDirectory);
     try {
       const metadata = await stat(this.modelPath);
       if (!metadata.isFile() || metadata.size === 0 || metadata.size > this.model.maxBytes) return false;
@@ -203,6 +227,15 @@ export class LocalWhisperRunner {
 
   async downloadModel(onEvent: (event: LocalWhisperEvent) => void): Promise<void> {
     await mkdir(this.#modelDirectory, { recursive: true, mode: 0o700 });
+    if (this.model.builtLocally) {
+      try {
+        await installHinglishModel(this.#modelDirectory, { onProgress: (received, total) => onEvent({ type: 'model-progress', received, total }) });
+        onEvent({ type: 'model-ready' });
+        return;
+      } catch (error) {
+        throw new LocalSpeechError(error instanceof Error ? error.message : 'The Hinglish speech model could not be set up.');
+      }
+    }
     const temporaryPath = join(this.#modelDirectory, `${this.model.file}.download`);
     const maximumModelBytes = this.model.maxBytes;
     const sizeLimit = `${Math.round(maximumModelBytes / 1024 / 1024)} MiB`;

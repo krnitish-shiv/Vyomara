@@ -114,7 +114,7 @@ export function ModelsPanel({
     };
   }, []);
 
-  const chooseSpeech = (model: 'fast' | 'best') => act(async () => {
+  const chooseSpeech = (model: 'fast' | 'best' | 'hinglish') => act(async () => {
     setSpeech(await window.vyomara.selectSpeechModel(model));
   }, 'The speech model could not be selected.');
 
@@ -341,13 +341,13 @@ export function ModelsPanel({
                   disabled={locked || speechProgress !== undefined}
                   title={`${model.label} · ${model.approxMegabytes} MB${model.ready ? '' : ' · not downloaded'}`}
                 >
-                  {model.id === 'best' ? 'Best · Hindi + English' : 'Fast · English'}
+                  {model.id === 'hinglish' ? 'Hinglish · best' : model.id === 'best' ? 'Hindi (Devanagari)' : 'Fast · English'}
                 </button>
               ))}
             </div>
             {!speech.models.find(model => model.id === speech.model)?.ready && (
               <button className="history-action" type="button" onClick={() => void downloadSpeech()} disabled={locked || speech.listeningEnabled}>
-                {speechProgress !== undefined ? `Downloading… ${speechProgress}%` : 'Download this voice model'}
+                {speechProgress !== undefined ? (speechProgress >= 100 ? 'Preparing the model…' : `Downloading… ${speechProgress}%`) : speech.model === 'hinglish' ? 'Set up the Hinglish model (1.6 GB download)' : 'Download this voice model'}
               </button>
             )}
           </section>

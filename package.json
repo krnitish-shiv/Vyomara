@@ -3,7 +3,7 @@
   "version": "2.0.0",
   "private": true,
   "license": "MIT",
-  "description": "Vyomara — a local-first personal AI assistant",
+  "description": "Vyomara \u2014 a local-first personal AI assistant",
   "packageManager": "pnpm@12.16.1",
   "type": "module",
   "main": "out/main/index.js",
@@ -18,7 +18,8 @@
     "typecheck": "tsc --noEmit",
     "test": "node --disable-warning=ExperimentalWarning --experimental-strip-types --test",
     "test:desktop-ui": "node scripts/ensure-electron.mjs && electron-vite build && node scripts/desktop-ui-smoke.mjs",
-    "eval": "node --disable-warning=ExperimentalWarning --experimental-strip-types scripts/eval-agent.ts"
+    "eval": "node --disable-warning=ExperimentalWarning --experimental-strip-types scripts/eval-agent.ts",
+    "setup:hinglish": "node --disable-warning=ExperimentalWarning --experimental-strip-types scripts/setup-hinglish-speech.ts"
   },
   "engines": {
     "node": ">=22.22.1"

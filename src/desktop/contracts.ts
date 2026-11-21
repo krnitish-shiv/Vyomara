@@ -22,6 +22,13 @@ export interface DesktopChatTextChunk {
 export interface DesktopChatResponse {
   readonly response: string;
   readonly sessionId: string;
+  /** The reply was read aloud while it was written (voice requests); do not speak it again. */
+  readonly spokenLive?: true;
+}
+
+export interface DesktopLiveSpeechEvent {
+  readonly requestId: string;
+  readonly speaking: boolean;
 }
 
 export type FileOperationKind = 'create-file' | 'create-directory' | 'edit-file' | 'delete';
@@ -164,7 +171,7 @@ export type DesktopSpeechRecognitionEvent =
   | { readonly type: 'error'; readonly message: string };
 
 export interface DesktopSpeechModel {
-  readonly id: 'fast' | 'best';
+  readonly id: 'fast' | 'best' | 'hinglish';
   readonly label: string;
   readonly approxMegabytes: number;
   readonly ready: boolean;
@@ -175,7 +182,7 @@ export interface DesktopSpeechSetupStatus {
   readonly runtimeAvailable: boolean;
   readonly listeningEnabled: boolean;
   /** The speech model in use. */
-  readonly model: 'fast' | 'best';
+  readonly model: 'fast' | 'best' | 'hinglish';
   readonly models: readonly DesktopSpeechModel[];
 }
 
@@ -257,7 +264,7 @@ export interface VyomaraDesktopApi {
   getSpeechSetupStatus(): Promise<DesktopSpeechSetupStatus>;
   /** Downloads the selected speech model. */
   downloadSpeechModel(): Promise<void>;
-  selectSpeechModel(model: 'fast' | 'best'): Promise<DesktopSpeechSetupStatus>;
+  selectSpeechModel(model: 'fast' | 'best' | 'hinglish'): Promise<DesktopSpeechSetupStatus>;
   setSpeechListening(enabled: boolean): Promise<DesktopSpeechSetupStatus>;
   /** Start or stop tap-to-dictate (loads the speech model without hands-free listening). */
   setDictation(active: boolean): Promise<void>;
@@ -266,6 +273,10 @@ export interface VyomaraDesktopApi {
   onSpeechRecognition(listener: (event: DesktopSpeechRecognitionEvent) => void): () => void;
   speakText(text: string): Promise<DesktopSpeechResult>;
   stopSpeaking(): Promise<boolean>;
+  /** The live spoken reply started or finished playing. */
+  onLiveSpeech(listener: (event: DesktopLiveSpeechEvent) => void): () => void;
+  /** Resolves when the live spoken reply for this request has finished. */
+  liveSpeechDone(requestId: string): Promise<void>;
   /** Approve this change and all later edits in the current task (not deletions). */
   approveAllFileOperations(id: string): Promise<void>;
   /** Whether the mini window may appear over other apps. */

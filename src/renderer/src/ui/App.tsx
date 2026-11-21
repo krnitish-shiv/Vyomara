@@ -345,6 +345,34 @@ export function App() {
     });
   }, [messages, requestPending]);
 
+  // The main process reads voice replies aloud clause by clause while they are written.
+  useEffect(() => {
+    let finishLive: (() => void) | undefined;
+    return window.vyomara.onLiveSpeech(({ speaking }) => {
+      if (speaking) {
+        // Do not record Vyom's own voice as a command.
+        voiceCapture.current.setMuted(true);
+        turn.current.reset();
+        setLiveTurn('');
+        setVoiceHearing(false);
+        speakingRef.current = true;
+        setVyomSpeaking(true);
+        speechDone.current = new Promise<void>(resolve => { finishLive = resolve; });
+        return;
+      }
+      if (!speakingRef.current) return;
+      speakingRef.current = false;
+      setVyomSpeaking(false);
+      setVoiceTranscript('');
+      void voiceSession.current.extend();
+      finishLive?.();
+      finishLive = undefined;
+      setTimeout(() => {
+        if (!speakingRef.current) voiceCapture.current.setMuted(false);
+      }, 250);
+    });
+  }, []);
+
   useEffect(() => window.vyomara.onChatText(({ requestId, text }) => {
     if (activeChatRequestId.current !== requestId) return;
     setMessages(current => {
@@ -543,7 +571,8 @@ export function App() {
           content: result.response,
           ...(planOnly ? { plan: true } : {}),
         }]);
-      if (speakResponse) speak(speechText(result.response));
+      // Voice replies were already read aloud while they were written (live speech).
+      if (speakResponse && !result.spokenLive) speak(speechText(result.response));
     } catch (error) {
       const message = error instanceof Error
         ? error.message

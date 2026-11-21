@@ -97,9 +97,9 @@ export class LocalWhisperServer {
     let text = '';
     for (const language of attempts) {
       text = await this.#transcribeOnce(wav, language, signal);
-      if (!hasUnexpectedScript(text)) return text;
+      if (!hasUnexpectedScript(text)) break;
     }
-    return text;
+    return polishTranscript(text);
   }
 
   async #transcribeOnce(wav: Uint8Array, language: string | undefined, signal: AbortSignal): Promise<string> {
@@ -141,4 +141,49 @@ export function cleanTranscript(text: string): string {
     .replace(/\[[^\]]*\]|\([^)]*\)/gu, ' ')
     .replace(/\s+/gu, ' ')
     .trim();
+}
+
+/**
+ * Whole transcripts whisper invents from silence or noise (learned from video
+ * subtitles). Dropped only when they are the entire phrase, never mid-sentence.
+ */
+const PHANTOM_PHRASES = [
+  'thanks for watching', 'thank you for watching', 'thanks for watching and see you next time',
+  'please subscribe', 'please like and subscribe', 'subscribe to my channel', 'like share and subscribe',
+  'subtitles by the amara.org community', 'subtitles by amara.org', 'see you in the next video',
+  'सब्सक्राइब करें', 'लाइक और सब्सक्राइब करें', 'चैनल को सब्सक्राइब करें', 'वीडियो देखने के लिए धन्यवाद',
+  'video dekhne ke liye dhanyavad', 'subscribe karein', 'channel ko subscribe karein',
+];
+
+function phraseKey(text: string): string {
+  return text.toLowerCase().replace(/[^\p{L}\p{M}\p{N}.]+/gu, ' ').replace(/\s+/gu, ' ').trim();
+}
+
+/**
+ * The assistants' names as whisper tends to mishear them, mapped back to the
+ * real spelling. Conservative on purpose: only forms that are not ordinary
+ * words ("beyond" or "via" stay untouched).
+ */
+const NAME_FIXES: readonly (readonly [RegExp, string])[] = [
+  // Heard in tests with real and synthetic voices (whisper large-v3-turbo and the Hinglish model).
+  [/(?<![\p{L}\p{M}])(?:vyomara|viomara|vyomra|vyomaara|wyomara|viyomara|biomara|vivaara|vyo\s?mara|vio\s?mara|viv\s?mara)(?![\p{L}\p{M}])/giu, 'Vyomara'],
+  [/(?<![\p{L}\p{M}])(?:viom|wyom|vyom|viyom|biyom|beyom|vyoam|vyaanm|vyaam|viyo|vyo\s?om)(?![\p{L}\p{M}])/giu, 'Vyom'],
+  // "Vyo," / "Vyo " at the start is the name cut short.
+  [/^(?:vyo|vio)(?=[,\s])/iu, 'Vyom'],
+  [/(?<![\p{L}\p{M}])(?:व्योमरा|वियोमारा|व्योमारा|विव\s?मारा)(?![\p{L}\p{M}])/gu, 'व्योमारा'],
+  [/(?<![\p{L}\p{M}])(?:वियोम|व्यूम|व्याम|व्योम)(?![\p{L}\p{M}])/gu, 'व्योम'],
+  // Product names the Hinglish model spells out.
+  [/(?<![\p{L}\p{M}])v\.?\s?s\.?\s?code(?![\p{L}\p{M}])/giu, 'VS Code'],
+];
+
+/**
+ * Final clean-up of a transcribed phrase: drop invented subtitle phrases and a
+ * repeated prompt, and spell the assistants' names right.
+ */
+export function polishTranscript(text: string, prompt = ''): string {
+  const cleaned = cleanTranscript(text);
+  const key = phraseKey(cleaned);
+  if (key === '' || PHANTOM_PHRASES.some(phrase => phraseKey(phrase) === key)) return '';
+  if (prompt !== '' && key === phraseKey(prompt)) return '';
+  return NAME_FIXES.reduce((value, [pattern, name]) => value.replace(pattern, name), cleaned);
 }

@@ -6,6 +6,14 @@ All notable changes to Vyomara are listed here. Versions follow
 ## [Unreleased]
 
 ### Voice
+- New **Hinglish** speech model (Models panel → Voice, or `pnpm setup:hinglish`):
+  hears Hindi and mixed Hindi-English speech correctly, in Roman letters, and
+  about five times faster than before. Used automatically once installed (ADR-0030).
+- Spoken replies start while they are still being written: the first words
+  come in about half a second instead of after the whole answer.
+- Misheard names ("Vyaanm", "Vivaara", "vio mara") are corrected to Vyom and
+  Vyomara, and phrases whisper invents from silence ("Thanks for watching")
+  are dropped.
 - Natural local voice (Kokoro): run `pnpm setup:voice` once; replies are then
   read by a natural female (Vyomara) or male (Vyom) voice, including Hindi,
   with the system voice as automatic fallback (ADR-0028).
