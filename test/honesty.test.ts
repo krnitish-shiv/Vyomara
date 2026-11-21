@@ -58,3 +58,10 @@ test('greetings and acknowledgements are small talk; requests are not', async ()
   for (const task of ['Google Chrome kholo', 'hi, shop project ke tests chala do', 'kya time hua hai', 'theek hai, ab commit kar do', 'weather kaisa hai'])
     assert.equal(isSmallTalk(task), false, task);
 });
+
+test('time and date questions count as current information', async () => {
+  const { asksForCurrentInfo } = await import('../src/agent/agent.ts');
+  for (const question of ['Abhi kitne baje hain?', 'time kya hua hai', 'aaj kya date hai', 'What time is it in London?'])
+    assert.equal(asksForCurrentInfo(question), true, question);
+  assert.equal(asksForCurrentInfo('ye function ki time complexity kya hai'), false);
+});

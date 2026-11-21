@@ -22,3 +22,23 @@ Background research:
 | 5 | **Talker and worker** | A small, fast model answers or acknowledges within about 1 s, while the main model works and its progress is spoken. | planned |
 | 6 | **Twin stage UI** | Glass look and responsive layout for laptop and external monitor (done, 2026-11-21). Still to do: A hologram avatar for each twin (WebGL point cloud, voice-reactive), presence modes (floating bar or notch), a sound design system, voiced onboarding, and a Visual Hub for structured answers. | planned |
 | 7 | **Mind** | Awareness that can speak first, with visible restraint. Memory search tuned for Hinglish (a consonant skeleton is done; FTS5 for larger stores is still to do). Memory extraction only from verified quotes. | planned |
+
+## Open work (kept up to date; nothing here is forgotten)
+
+From the owner's real test on 2026-11-21. They rated the reply quality "very bad" (it needs more than 100% improvement), listening at about 70% short of good, and said the UI wastes space in the corners.
+
+- [x] Replies in Roman Hinglish, never Devanagari; the voice converts Hindi words itself.
+- [x] Small talk never runs tools; claimed actions without a tool are sent back; tool arguments in the wrong type are fixed.
+- [x] Time and date questions are looked up, not guessed.
+- [x] Conversation eval with the owner's real requests (`pnpm eval:talk`). Results so far:
+  - qwen3:14b: 7/8 passed, about 2 s per warm reply, 47 s cold, weak Hinglish.
+  - qwen3.6-27b: 8/8 passed, good Hinglish, about 7 s per warm reply, 95 s cold.
+- [ ] **Model choice.** Run `eval:talk` and `eval` on Qwen3-Coder-30B-A3B (downloading) and gpt-oss:20b (download paused), then pick the default. Goal: Hinglish as good as qwen3.6-27b at qwen3:14b speed or better.
+- [ ] **Cold first reply** (47–95 s). Shrink the ~8k-token fixed prompt (tool descriptions), keep the model loaded longer than 30 minutes, and give a spoken acknowledgement during the wait.
+- [ ] **Listening.** Transcribe the whole turn's audio once at the end instead of short pieces separately, so whisper gets the full sentence. Re-check turn-end timing.
+- [ ] **UI corner space.** Tighten the outer padding, rounded corners and side columns so the content uses the window.
+- [ ] **Voices.** Maya 2 Native samples for Vyom and Vyomara (5 voices each, model downloading); the owner listens and chooses; then a Maya sidecar with Kokoro as fallback.
+- [ ] **Talker/worker (milestone 5).** A small fast model for instant replies while the main model works.
+- [ ] **Twin hologram (milestone 6).** Design it with the owner and attach it to the orb.
+- [ ] **Awareness (milestone 7).** The twin can speak first, with visible restraint.
+- [ ] Rebuild and install after each batch so the owner can test.

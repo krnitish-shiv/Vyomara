@@ -19,7 +19,8 @@
     "test": "node --disable-warning=ExperimentalWarning --experimental-strip-types --test",
     "test:desktop-ui": "node scripts/ensure-electron.mjs && electron-vite build && node scripts/desktop-ui-smoke.mjs",
     "eval": "node --disable-warning=ExperimentalWarning --experimental-strip-types scripts/eval-agent.ts",
-    "setup:hinglish": "node --disable-warning=ExperimentalWarning --experimental-strip-types scripts/setup-hinglish-speech.ts"
+    "setup:hinglish": "node --disable-warning=ExperimentalWarning --experimental-strip-types scripts/setup-hinglish-speech.ts",
+    "eval:talk": "node --disable-warning=ExperimentalWarning --experimental-strip-types scripts/eval-conversation.ts"
   },
   "engines": {
     "node": ">=22.22.1"

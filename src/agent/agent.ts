@@ -361,6 +361,8 @@ const DO_NOT_ASK_NUDGE =
 
 /** Questions whose answer changes over time: never answer them from the model's memory. */
 export function asksForCurrentInfo(prompt: string): boolean {
+  // The time and date: "kitne baje hain", "time kya hua", "aaj kya date hai".
+  if (/\b(?:kitne baje|kitna baja|kya time|time kya|kya samay|samay kya|what time|what's the time|whats the time|which day|what day|aaj kya date|aaj ki date|aaj kaun sa din|aaj kya din|tarikh|tareekh)\b/iu.test(prompt)) return true;
   return /\b(?:latest|newest|recent(?:ly)?|today|tonight|right now|this (?:week|month|year)|current (?:version|price|rate|news|time|weather|score)|price|prices|(?:exchange|interest|gold|silver|petrol|diesel|dollar|share|stock) rates?|version|(?:live|match|cricket) score|weather|forecast|news|aaj|abhi ka|kal ka|mausam|daam|bhav|keemat)\b/iu.test(prompt);
 }
 
