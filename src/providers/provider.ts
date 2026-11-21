@@ -106,6 +106,14 @@ export function ollamaThinkValue(model: string, think: boolean | undefined): boo
   return think;
 }
 
+/**
+ * How long Ollama keeps the model (and its cached prompt) loaded after a
+ * request. Reloading and re-reading the ~10k-token prompt takes about a
+ * minute on a 14B model, which a voice assistant cannot afford after a short
+ * break; the app frees the model itself when it quits.
+ */
+const OLLAMA_KEEP_ALIVE = '4h';
+
 const THINK_BLOCK = /<think>[\s\S]*?(?:<\/think>|$)/gu;
 
 /** Remove reasoning blocks that some models emit inline. */
@@ -554,7 +562,7 @@ export class OllamaProvider implements ModelProvider {
         signal,
         body: JSON.stringify({
           model: this.model,
-          keep_alive: '30m',
+          keep_alive: OLLAMA_KEEP_ALIVE,
           ...(this.numCtx === undefined ? {} : { options: { num_ctx: this.numCtx } }),
         }),
       });
@@ -587,7 +595,7 @@ export class OllamaProvider implements ModelProvider {
           tools: ollamaTools(tools),
           ...(supportsThinking ? { think: ollamaThinkValue(this.model, this.think) } : {}),
           options: { ...(this.numCtx === undefined ? {} : { num_ctx: this.numCtx }), num_predict: 1 },
-          keep_alive: '30m',
+          keep_alive: OLLAMA_KEEP_ALIVE,
         }),
       });
       await response.body?.cancel().catch(() => undefined);
@@ -681,7 +689,7 @@ export class OllamaProvider implements ModelProvider {
         tools: ollamaTools(tools),
         ...(supportsThinking ? { think: ollamaThinkValue(this.model, this.think) } : {}),
         ...(this.numCtx === undefined ? {} : { options: { num_ctx: this.numCtx } }),
-        keep_alive: '30m',
+        keep_alive: OLLAMA_KEEP_ALIVE,
       });
     } catch (error) {
       if (error instanceof ProviderError) throw error;
