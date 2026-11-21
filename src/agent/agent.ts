@@ -411,6 +411,34 @@ export function asksForCodeChange(prompt: string): boolean {
   return /\b(?:fix|bug|implement|change|update|add|refactor|rename|remove|replace|edit|modify|write|create|make)\b|\b(?:karo|kar do|kardo|banao|bana do|likho|likh do|sudhaaro|sudharo|hatao|badlo|badal do|thik karo|theek karo)\b/iu.test(prompt);
 }
 
+const CLAIMED_ACTION_NUDGE =
+  'You told the user the action is done, but no tool ran in this request, so nothing happened. Do it now with the right tool (open_application to open an app, open_url for a link, control_application for an open window, run_command for a command), then confirm in one short line. If you cannot do it, say so honestly.';
+
+/**
+ * A reply that says an action happened ("Chrome khol diya", "kholega",
+ * "I've opened it", "ho gaya") although no tool ran.
+ */
+export function claimsActionDone(text: string): boolean {
+  return /\b(?:khol(?: diya| di| diye|ega|egi|ta hoon|ti hoon| raha hoon| rahi hoon)|open(?:ed)? kar (?:diya|di|raha|rahi)|open ho gaya|chala (?:diya|di)|chalu kar (?:diya|di)|band kar (?:diya|di)|bhej (?:diya|di)|play kar (?:diya|di|raha|rahi)|laga (?:diya|di))\b/iu.test(text) ||
+    /\b(?:i(?:'ve| have)? (?:opened|launched|started|closed|played|sent)|(?:is|has been) (?:now )?(?:opened|open|launched|playing)|opening (?:it|chrome|the app) now)\b/iu.test(text) ||
+    /(?:खोल दिया|खोल दी|खोलेगा|खोलेगी|चला दिया|बंद कर दिया|भेज दिया)/u.test(text);
+}
+
+/**
+ * Greetings, acknowledgements, and small talk ("hi", "acha ji", "theek hai",
+ * "Hi, bhaiya", "kaise ho"): answered in one friendly line, never with tools.
+ * Weak local models otherwise check the clock for "hi" or run a command for
+ * "acha ji".
+ */
+export function isSmallTalk(prompt: string): boolean {
+  const text = prompt.toLowerCase().replace(/[^\p{L}\p{N}\s]/gu, ' ').replace(/\s+/gu, ' ').trim();
+  if (text === '' || text.split(' ').length > 6) return false;
+  const words = '(?:hi|hii|hello|hey|helo|namaste|namaskar|salaam|good morning|good night|good evening|gm|gn|ok|okay|okk|acha|accha|achha|achchha|theek|thik|hai|haan|han|ha|ji|jee|bhai|bhaiya|bhaiyya|didi|yaar|dost|sir|madam|thanks|thank you|thank|shukriya|dhanyavaad|dhanyawad|kaise|kaisi|ho|hain|hoon|kya|haal|chaal|sab|badhiya|mast|cool|nice|great|good|wow|hmm|hm|vyom|vyomara|bye|tata|chalo|phir|milte|baad|mein|me|and|you|how|are|fine|well|what|s|up|sup|kar|rahe|rahi|raha|ho|bas)';
+  return new RegExp(`^${words}(?: ${words})*$`, 'u').test(text);
+}
+
+const SMALL_TALK_REFUSAL = 'This message is a greeting or small talk, not a task: no tool is needed. Reply in one short, warm sentence in the user\'s language.';
+
 const UNFINISHED_PLAN_NUDGE =
   'Your reply is a checklist with steps still open. Do not stop at the plan: carry out the next open step now with tools, then keep going until every step is done, and only then give your final answer.';
 
@@ -727,6 +755,8 @@ async function runAgentTask(
   if (signal.aborted) throw new AgentError('Operation cancelled.', 'cancelled');
   // "/review", "/fix", "/test", "/commit", "/explain", or the project's own commands.
   const typed = prompt;
+  // Small talk never runs tools (see isSmallTalk).
+  const smallTalk = isSmallTalk(prompt);
   const project = (options.environment ?? detectEnvironment([...session.messages(), { role: 'user', content: typed }])).activeProject;
   prompt = (await expandSlashCommand(typed, project)).prompt;
   const start = Date.now();
@@ -878,12 +908,15 @@ async function runAgentTask(
       // "Latest React Native version?" answered without a single tool call: from stale memory.
       const answeredFromMemory = toolCalls === 0 && hasWebTools && asksForCurrentInfo(prompt);
       const askedToLookItUp = hasWebTools && offersToLookItUp(response.text);
-      // Spoken replies may use the voice's script; typed Roman Hinglish gets Roman letters back.
-      const wrongScript = !options.voice && isRomanHinglish(typed) && isMostlyDevanagari(response.text);
-      if (canNudge && (unappliedChange || unfinishedPlan || gaveUpOnWeb || answeredFromMemory || askedToLookItUp || wrongScript || announcesNextStep(response.text))) {
+      // Roman Hinglish gets Roman letters back, typed or spoken (the voice converts it itself).
+      const wrongScript = isRomanHinglish(typed) && isMostlyDevanagari(response.text);
+      // "Chrome khol diya" with no tool call: nothing was opened.
+      const claimedAction = toolCalls === 0 && modelTools.some(tool => tool.id === 'open_application') && asksForBrowser(prompt) && claimsActionDone(response.text);
+      if (canNudge && (claimedAction || unappliedChange || unfinishedPlan || gaveUpOnWeb || answeredFromMemory || askedToLookItUp || wrongScript || announcesNextStep(response.text))) {
         continuationNudges += 1;
         session.add({ role: 'assistant', content: response.text });
-        pendingNudge = unappliedChange ? APPLY_CHANGE_NUDGE
+        pendingNudge = claimedAction ? CLAIMED_ACTION_NUDGE
+          : unappliedChange ? APPLY_CHANGE_NUDGE
           : unfinishedPlan ? UNFINISHED_PLAN_NUDGE
           : gaveUpOnWeb ? USE_THE_WEB_NUDGE
           : answeredFromMemory ? LOOK_IT_UP_NUDGE
@@ -950,6 +983,11 @@ async function runAgentTask(
             error: 'You already made this exact call. Use the earlier result above, or try a different approach.',
           }),
         });
+        continue;
+      }
+
+      if (smallTalk) {
+        session.add({ role: 'tool', toolId: call.toolId, content: JSON.stringify({ ok: false, error: SMALL_TALK_REFUSAL }) });
         continue;
       }
 

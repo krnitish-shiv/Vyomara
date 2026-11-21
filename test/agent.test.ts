@@ -900,11 +900,11 @@ test('the system prompt names the chosen assistant and its grammatical gender', 
   const female = buildSystemPrompt(environment, [], { persona: 'vyomara' });
   assert.match(female, /You are Vyomara, the female AI assistant/);
   assert.match(female, /main kar rahi hoon/);
-  assert.doesNotMatch(spokenRequestNote('vyomara'), /your voice can only read Roman letters/);
+  assert.match(spokenRequestNote('vyomara'), /Never write Devanagari/);
   const male = buildSystemPrompt(environment, []);
   assert.match(male, /You are Vyom, the male AI assistant/);
   assert.match(male, /main kar raha hoon/);
-  assert.match(spokenRequestNote(), /your voice can only read Roman letters/);
+  assert.match(spokenRequestNote(), /Never write Devanagari/);
 });
 
 test('the active project comes from the user\'s message, and its agent notes are loaded', async t => {

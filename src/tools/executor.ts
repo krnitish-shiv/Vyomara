@@ -3,6 +3,7 @@ import type { Logger, ToolInvocationContext } from '../types.ts';
 import { OperationStoppedError, runBounded } from '../shared/bounded.ts';
 import { PolicyGateway } from './policy.ts';
 import { ToolRegistry } from './contracts.ts';
+import type { ToolArgumentSchema } from './contracts.ts';
 import { ToolFailure } from './contracts.ts';
 import type { ModelToolDefinition } from './contracts.ts';
 
@@ -69,6 +70,7 @@ export class ToolExecutor {
         'unknown-tool',
       );
     }
+    input = coerceToSchema(input, tool.parameters);
     if (tool.normalizeInput) input = tool.normalizeInput(input);
     if (!tool.validateInput(input)) {
       throw new ToolExecutionError(
@@ -152,4 +154,37 @@ export class ToolExecutor {
       throw error;
     }
   }
+}
+
+/**
+ * Local models often send "false" or "12" where the schema says boolean or
+ * integer, and leave optional fields as null or "". Fix those before
+ * validation so the call runs instead of failing; anything else is left for
+ * the tool to reject.
+ */
+export function coerceToSchema(input: unknown, schema: ToolArgumentSchema): unknown {
+  if (typeof input !== 'object' || input === null || Array.isArray(input)) return input;
+  const required = new Set(schema.required ?? []);
+  const out: Record<string, unknown> = {};
+  for (const [key, value] of Object.entries(input as Record<string, unknown>)) {
+    const property = schema.properties[key];
+    if (!property) {
+      out[key] = value;
+      continue;
+    }
+    // An empty optional value means "not given".
+    if (!required.has(key) && property.nullable !== true && (value === null || (value === '' && property.type !== 'string'))) continue;
+    if (property.type === 'boolean' && typeof value === 'string' && /^(?:true|false)$/iu.test(value.trim())) {
+      out[key] = value.trim().toLowerCase() === 'true';
+    } else if (property.type === 'integer' && typeof value === 'string' && /^-?\d+$/u.test(value.trim())) {
+      out[key] = Number(value.trim());
+    } else if (property.type === 'integer' && typeof value === 'number' && Number.isFinite(value) && !Number.isInteger(value)) {
+      out[key] = Math.round(value);
+    } else if (property.type === 'string' && (typeof value === 'number' || typeof value === 'boolean')) {
+      out[key] = String(value);
+    } else {
+      out[key] = value;
+    }
+  }
+  return out;
 }

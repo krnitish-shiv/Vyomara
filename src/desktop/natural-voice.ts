@@ -6,6 +6,7 @@ import { existsSync } from 'node:fs';
 import { mkdir, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
+import { hinglishForVoice } from '../shared/hinglish-devanagari.ts';
 
 /** Voices installed by scripts/setup-natural-voice.mjs. */
 export const NATURAL_VOICES = { female: 'hf_beta', male: 'hm_omega' } as const;
@@ -22,7 +23,8 @@ export interface NaturalSpeechPort {
  * voices say them right ("Vyom" rhymes with Om).
  */
 export function textForNatural(text: string): string {
-  return text.replace(/\bVyomara\b/gu, 'व्योमारा').replace(/\bVyom\b/gu, 'व्योम');
+  // The screen shows Roman Hinglish; the voice reads Hindi right only from Devanagari.
+  return hinglishForVoice(text).replace(/\bVyomara\b/gu, 'व्योमारा').replace(/\bVyom\b/gu, 'व्योम');
 }
 
 /**

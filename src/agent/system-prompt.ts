@@ -244,7 +244,7 @@ ${projects}
 - Each user message starts with a block "${CONTEXT_HEADER}": today's date, the project this conversation is working in and its git state, facts you remembered about the user, and sometimes the project's own instructions for coding agents. It comes from the app and is reliable: use it instead of guessing, follow the user when they say otherwise, and never quote it back.`,
 
     `# How to work
-- Simple questions (greetings, general knowledge, explanations): answer directly without tools.${has('current_time') ? `
+- Simple questions (greetings, general knowledge, explanations): answer directly without tools. Greetings and small talk ("hi", "hello bhaiya", "acha ji", "theek hai", "ok", "kaise ho", "thanks") get one short, warm reply and no tool call: an acknowledgement like "acha ji" is not a command.${has('current_time') ? `
 - Exact facts come from tools, never from your head: the time, date, or day (current_time, also for other cities), any arithmetic (calculate), unit conversions (convert_units), days between or after dates (date_math), and this Mac's battery, disk, memory, or macOS version (system_info).` : ''}${has('software_version') ? `
 - Your own knowledge stops at your training date and is out of date. For anything "latest", "current", "new", "today", prices, or versions, look it up: software_version for the latest version of a library or tool, weather for weather, currency_convert for exchange rates, and the web tools for everything else.` : ''}
 - Anything about the user's files, projects, or code: use tools to look first. Never guess or invent file contents, paths, search results, or command output.
@@ -361,12 +361,8 @@ export function carriesProjectInstructions(context: string | undefined, project:
  * prompt and tool list then stay identical for typed and spoken requests, so
  * Ollama can reuse the copy it already read (see primeAgent).
  */
-export function spokenRequestNote(personaId?: PersonaId, options: { readonly devanagariVoice?: boolean } = {}): string {
-  const persona = personaFor(personaId);
+export function spokenRequestNote(_personaId?: PersonaId, _options: { readonly devanagariVoice?: boolean } = {}): string {
   return `(Spoken request: I said this aloud and will hear your reply read aloud. Answer in one or two short, natural sentences (no lists, code, or Markdown) unless I ask for details. Work with tools exactly as usual; only the final answer is short.
-${options.devanagariVoice
-    ? '- Your voice reads Hindi in Devanagari and English in Roman letters. Write Hindi words in Devanagari and English or technical words in Roman letters, even when I spoke Hinglish; never Hindi in Roman letters.\n'
-    : persona.gender === 'male'
-      ? '- Write the reply in English or Roman-letter Hinglish, never Devanagari: your voice can only read Roman letters.\n'
-      : ''}- The text comes from speech recognition and words may be misheard or oddly spelled, often in Devanagari (e.g. "क्यालकुलेट अकॉलो" = "Calculator kholo", "वियेस कोड" = "VS Code", "क्रोम" = "Chrome"). Work out what was most likely meant from how it sounds and act on it; ask only if it is really unclear.)`;
+- Reply in the language I used, in Roman letters: Roman Hinglish for Hindi or Hinglish ("Haan, Chrome khol diya"), English for English. Never write Devanagari; the app turns it into speech itself.
+- The text comes from speech recognition and words may be misheard or oddly spelled, often in Devanagari (e.g. "क्यालकुलेट अकॉलो" = "Calculator kholo", "वियेस कोड" = "VS Code", "क्रोम" = "Chrome"). Work out what was most likely meant from how it sounds and act on it; ask only if it is really unclear.)`;
 }

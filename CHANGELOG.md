@@ -41,6 +41,16 @@ All notable changes to Vyomara are listed here. Versions follow
   phrasing like "mera otp 482913 hai" are never remembered; addresses with a
   postal PIN code still are.
 
+### Replies (from the owner's first real test)
+- Replies stay in Roman Hinglish when you speak Hinglish, never Devanagari;
+  the voice converts common Hindi words itself so it still pronounces them
+  right.
+- Greetings and small talk ("hi", "acha ji", "Hi, bhaiya") get one friendly
+  line and never run a tool.
+- A twin that says it opened something ("Chrome kholega") without doing it is
+  sent back to actually open it, or to say honestly that it could not.
+- Tool arguments in the wrong type ("false", "30") are fixed instead of failing.
+
 ### Assistants
 - Vyom and Vyomara are the only assistants you talk to. Behind them works an
   inner team (Khoj for research, Yatra for travel, Kavach for Mac health,

@@ -111,3 +111,24 @@ test('helper tools outlive the read-tool timeout; ordinary read tools do not', a
   assert.deepEqual(await tools.execute('helper', {}, AbortSignal.timeout(5_000)), { done: true });
   await assert.rejects(tools.execute('plain', {}, AbortSignal.timeout(5_000)), /timed out/iu);
 });
+
+test('tool arguments in the wrong type are fixed before validation', async () => {
+  const { coerceToSchema } = await import('../src/tools/executor.ts');
+  const schema = {
+    type: 'object' as const,
+    properties: {
+      command: { type: 'string' as const },
+      background: { type: 'boolean' as const },
+      timeout: { type: 'integer' as const },
+      cwd: { type: 'string' as const },
+      label: { type: 'string' as const, nullable: true as const },
+    },
+    required: ['command'],
+    additionalProperties: false as const,
+  };
+  assert.deepEqual(coerceToSchema({ command: 'ls', background: 'false', timeout: '30', cwd: '' }, schema), { command: 'ls', background: false, timeout: 30, cwd: '' });
+  assert.deepEqual(coerceToSchema({ command: 'ls', background: null, timeout: 2.6 }, schema), { command: 'ls', timeout: 3 });
+  assert.deepEqual(coerceToSchema({ command: 42, background: 'TRUE', label: null }, schema), { command: '42', background: true, label: null });
+  assert.deepEqual(coerceToSchema({ command: 'ls', background: 'maybe', extra: 1 }, schema), { command: 'ls', background: 'maybe', extra: 1 }, 'unclear values are left for the tool to reject');
+  assert.equal(coerceToSchema('not an object', schema), 'not an object');
+});

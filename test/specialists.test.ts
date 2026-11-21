@@ -103,10 +103,11 @@ test('screen_time sums the recorded days and is registered only with a usage por
   assert.equal(bare.get('screen_time'), undefined);
 });
 
-test('the spoken-request note lets the natural voice read Devanagari and keeps Roman for the system voice', async () => {
+test('the spoken-request note keeps replies in Roman letters for every voice', async () => {
   const { spokenRequestNote } = await import('../src/agent/system-prompt.ts');
-  assert.match(spokenRequestNote('vyom', { devanagariVoice: true }), /Hindi words in Devanagari/);
-  assert.doesNotMatch(spokenRequestNote('vyom', { devanagariVoice: true }), /can only read Roman letters/);
-  assert.match(spokenRequestNote('vyom'), /can only read Roman letters/);
-  assert.doesNotMatch(spokenRequestNote('vyomara'), /Hindi words in Devanagari/);
+  // The owner reads Roman Hinglish: replies are never written in Devanagari, whatever the voice.
+  for (const note of [spokenRequestNote('vyom', { devanagariVoice: true }), spokenRequestNote('vyomara')]) {
+    assert.match(note, /Never write Devanagari/);
+    assert.match(note, /Roman Hinglish/);
+  }
 });

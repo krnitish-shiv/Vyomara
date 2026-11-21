@@ -253,7 +253,8 @@ test('tool inputs are validated before execution', async () => {
     },
   }));
   await assert.rejects(
-    executor(registry).execute('test.echo', { value: 42 }, new AbortController().signal),
+    // (A number for a string is fixed by coerceToSchema; an object cannot be.)
+    executor(registry).execute('test.echo', { value: { nested: true } }, new AbortController().signal),
     (error: unknown) => error instanceof ToolExecutionError && error.code === 'invalid-input',
   );
   assert.equal(executed, false);
