@@ -6,10 +6,17 @@
  */
 
 export interface TurnCollectorOptions {
-  /** Extra quiet time after a phrase ends before the turn is over. */
+  /** Quiet time after a phrase ends before the turn is over, when no transcript says otherwise. */
   readonly endOfTurnMs?: number;
+  /**
+   * Quiet time to wait given the words heard so far (see turnPauseMs): short
+   * when the sentence sounds finished, long when it trails off ("aur…").
+   */
+  readonly pauseFor?: (text: string) => number;
   /** Timer hook for tests; returns a function that cancels the timer. */
   readonly schedule?: (callback: () => void, ms: number) => () => void;
+  /** Clock hook for tests. */
+  readonly now?: () => number;
 }
 
 const defaultSchedule = (callback: () => void, ms: number): (() => void) => {
@@ -17,14 +24,36 @@ const defaultSchedule = (callback: () => void, ms: number): (() => void) => {
   return () => clearTimeout(timer);
 };
 
+/** Words a Hinglish/English sentence does not end on: the speaker is still going. */
+const TRAILING = /(?:^|[\s,])(?:aur|ya|ki|ke|ka|ko|se|mein|me|par|pe|lekin|magar|kyunki|kyonki|matlab|jaise|phir|fir|toh|to|bhi|jo|jab|agar|and|or|but|the|a|an|of|with|for|because|so|like|uh|um|umm|hmm|और|या|कि|के|का|को|से|में|पर|लेकिन|क्योंकि|मतलब|जैसे|फिर|तो|अगर)[\s,.…-]*$/iu;
+/** Endings of a finished request or question. */
+const FINISHED = /(?:[?!।]|\.(?!\.))\s*$|(?:^|\s)(?:karo|kar do|kardo|kariye|kijiye|do|dijiye|batao|bataiye|dikhao|kholo|khol do|chalao|chala do|bajao|band karo|ruko|bas|hai|hain|tha|thi|please|thanks|thank you|na|ok|okay|theek hai|haan|nahi|करो|कर दो|दो|बताओ|दिखाओ|खोलो|चलाओ|है|हैं|था|थी|हाँ|नहीं)\s*$/iu;
+
+/**
+ * How long to wait for more speech, from the words heard so far. A finished
+ * sentence ends the turn quickly (whisper adds the punctuation); a sentence
+ * that trails off on "aur", "ki", "and"… waits longer so a thinking pause is
+ * not cut. Pure, so it can be tuned against real transcripts.
+ */
+export function turnPauseMs(text: string): number {
+  const trimmed = text.trim();
+  if (trimmed === '') return 900;
+  if (/(?:\.\.\.|…)\s*$/u.test(trimmed) || TRAILING.test(trimmed)) return 1_800;
+  if (FINISHED.test(trimmed)) return 350;
+  return 900;
+}
+
 export class TurnCollector {
   readonly #onTurn: (text: string) => void;
   readonly #endOfTurnMs: number;
+  readonly #pauseFor: ((text: string) => number) | undefined;
   readonly #schedule: (callback: () => void, ms: number) => () => void;
+  readonly #now: () => number;
   /** Transcripts in speaking order; undefined while still being transcribed. */
   #slots: (string | undefined)[] = [];
   #speaking = false;
-  #quietLongEnough = false;
+  /** When the speaker last went quiet (undefined while speaking). */
+  #quietSince: number | undefined;
   #cancelTimer: (() => void) | undefined;
   /** Bumped by reset() so late transcripts from an abandoned turn are dropped. */
   #generation = 0;
@@ -32,7 +61,9 @@ export class TurnCollector {
   constructor(onTurn: (text: string) => void, options: TurnCollectorOptions = {}) {
     this.#onTurn = onTurn;
     this.#endOfTurnMs = options.endOfTurnMs ?? 1000;
+    this.#pauseFor = options.pauseFor;
     this.#schedule = options.schedule ?? defaultSchedule;
+    this.#now = options.now ?? Date.now;
   }
 
   /** Words heard so far in this turn. */
@@ -47,7 +78,7 @@ export class TurnCollector {
 
   speechStarted(): void {
     this.#speaking = true;
-    this.#quietLongEnough = false;
+    this.#quietSince = undefined;
     this.#cancelTimer?.();
     this.#cancelTimer = undefined;
   }
@@ -55,12 +86,8 @@ export class TurnCollector {
   /** The speaker went quiet (the phrase may follow via addPhrase, or was too short). */
   speechEnded(): void {
     this.#speaking = false;
-    this.#cancelTimer?.();
-    this.#cancelTimer = this.#schedule(() => {
-      this.#cancelTimer = undefined;
-      this.#quietLongEnough = true;
-      this.#finishIfReady();
-    }, this.#endOfTurnMs);
+    this.#quietSince = this.#now();
+    this.#arm();
   }
 
   /** Reserve the next place for a phrase being transcribed; call the returned function with its text. */
@@ -68,10 +95,11 @@ export class TurnCollector {
     const index = this.#slots.length;
     const generation = this.#generation;
     this.#slots.push(undefined);
+    this.#arm();
     return text => {
       if (generation !== this.#generation || index >= this.#slots.length) return;
       this.#slots[index] = text?.trim() ?? '';
-      this.#finishIfReady();
+      this.#arm();
     };
   }
 
@@ -81,13 +109,31 @@ export class TurnCollector {
     this.#cancelTimer = undefined;
     this.#slots = [];
     this.#speaking = false;
-    this.#quietLongEnough = false;
+    this.#quietSince = undefined;
     this.#generation += 1;
   }
 
-  #finishIfReady(): void {
-    if (this.#speaking || !this.#quietLongEnough) return;
+  /** (Re)start the end-of-turn timer from what is known now. */
+  #arm(): void {
+    this.#cancelTimer?.();
+    this.#cancelTimer = undefined;
+    if (this.#speaking || this.#quietSince === undefined) return;
+    // Every phrase must be transcribed first; the last transcript re-arms the timer.
     if (this.#slots.some(slot => slot === undefined)) return;
+    const wait = this.#slots.length > 0 && this.#pauseFor ? this.#pauseFor(this.text) : this.#endOfTurnMs;
+    const remaining = wait - (this.#now() - this.#quietSince);
+    if (remaining <= 0) {
+      this.#finish();
+      return;
+    }
+    this.#cancelTimer = this.#schedule(() => {
+      this.#cancelTimer = undefined;
+      this.#finish();
+    }, remaining);
+  }
+
+  #finish(): void {
+    if (this.#speaking || this.#slots.some(slot => slot === undefined)) return;
     const text = this.text;
     this.reset();
     if (text) this.#onTurn(text);

@@ -61,6 +61,7 @@ import { isSpeechModelId, LocalSpeechError, LocalWhisperRunner, resolveWhisperBi
 import { SpeechQueue } from '../desktop/speech-queue.ts';
 import type { PreparedSpeech } from '../desktop/mac-speech.ts';
 import { ClauseStream } from '../shared/clause-stream.ts';
+import { acknowledgementFor } from '../shared/acknowledgement.ts';
 import type { SpeechModelId } from '../desktop/local-whisper.ts';
 import { LocalWhisperServer, resolveWhisperServer } from '../desktop/whisper-server.ts';
 import type { LocalWhisperEvent } from '../desktop/local-whisper.ts';
@@ -102,6 +103,8 @@ interface LiveSpeech {
   readonly requestId: string;
   readonly clauses: ClauseStream;
   readonly queue: SpeechQueue<PreparedSpeech>;
+  /** Something was already said for this reply (text or an acknowledgement). */
+  spoke: boolean;
 }
 let liveSpeech: LiveSpeech | undefined;
 
@@ -110,6 +113,7 @@ function startLiveSpeech(requestId: string): LiveSpeech {
   const gender = personaFor(persona).gender;
   const live: LiveSpeech = {
     requestId,
+    spoke: false,
     clauses: new ClauseStream(),
     queue: new SpeechQueue<PreparedSpeech>({
       prepare: text => macSpeechRunner.prepare(text, gender),
@@ -903,9 +907,19 @@ ipcMain.handle('vyomara:chat-send', async (_event, input: unknown) => {
         ...(macSpeechRunner.naturalVoiceReady ? { devanagariVoice: true } : {}),
         onText: text => {
           send('vyomara:chat-text', { requestId: request.requestId, text });
-          if (live) for (const clause of live.clauses.push(text)) live.queue.enqueue(clause);
+          if (live) for (const clause of live.clauses.push(text)) {
+            live.spoke = true;
+            live.queue.enqueue(clause);
+          }
         },
-        onToolActivity: activity => send('vyomara:tool-activity', { requestId: request.requestId, ...activity }),
+        onToolActivity: activity => {
+          send('vyomara:tool-activity', { requestId: request.requestId, ...activity });
+          // Speak first, then work: a short line when the first tool starts and nothing was said yet.
+          if (live && !live.spoke && activity.status === 'running') {
+            live.spoke = true;
+            live.queue.enqueue(acknowledgementFor(activity.toolId, activity.label, personaFor(persona).gender));
+          }
+        },
         onPlan: steps => send('vyomara:plan', { requestId: request.requestId, steps }),
         ...desktopToolOptions(desktopConfig, approvals, actionApprovals),
       },

@@ -21,7 +21,7 @@ import { ModelsPanel } from './models-panel.tsx';
 import { PermissionsPanel } from './permissions-panel.tsx';
 import { appendVoiceDraft } from './voice-dictation.ts';
 import { approvalQuestion, isGoodbye, isLikelyNoise, isUndoRequest, speechText, VoiceSession } from '../../../shared/voice-intents.ts';
-import { TurnCollector } from '../../../shared/turn-taking.ts';
+import { TurnCollector, turnPauseMs } from '../../../shared/turn-taking.ts';
 import { DEFAULT_PERSONA, PERSONAS, type PersonaId } from '../../../shared/persona.ts';
 import { playEarcon } from './earcon.ts';
 import { VoiceCapture } from './voice-capture.ts';
@@ -188,7 +188,8 @@ export function App() {
   const speechDone = useRef<Promise<void>>(Promise.resolve());
   const handleTurn = useRef<((text: string) => void) | undefined>(undefined);
   /** Joins the phrases of one spoken request and waits until the speaker has finished. */
-  const turn = useRef(new TurnCollector(text => handleTurn.current?.(text)));
+  // The turn ends sooner after a finished sentence and later after one that trails off ("aur…").
+  const turn = useRef(new TurnCollector(text => handleTurn.current?.(text), { pauseFor: turnPauseMs }));
   const dictationRef = useRef<'main' | 'pip' | undefined>(undefined);
   const pendingTranscriptions = useRef(new Set<Promise<unknown>>());
   /** Whether the request in progress was spoken (only spoken requests get spoken replies). */

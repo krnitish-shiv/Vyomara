@@ -20,7 +20,8 @@ export class VoiceCapture {
   #stream: MediaStream | undefined;
   #context: AudioContext | undefined;
   #processor: ScriptProcessorNode | undefined;
-  #detector = new PhraseDetector({ sampleRate: SAMPLE_RATE });
+  // A short phrase gap: the turn collector joins phrases and decides from the words when the turn is over.
+  #detector = new PhraseDetector({ sampleRate: SAMPLE_RATE, endSilenceMs: 500 });
   #muted = false;
 
   get active(): boolean {
