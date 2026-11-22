@@ -65,3 +65,46 @@ test('time and date questions count as current information', async () => {
     assert.equal(asksForCurrentInfo(question), true, question);
   assert.equal(asksForCurrentInfo('ye function ki time complexity kya hai'), false);
 });
+
+test('a guessed reply to a current-facts question is held back, not shown or spoken', async () => {
+  const registry = new ToolRegistry();
+  registry.register({
+    id: 'web_search',
+    effect: 'read',
+    description: 'Search the web.',
+    parameters: { type: 'object', properties: { query: { type: 'string' } }, required: ['query'], additionalProperties: false },
+    validateInput: (value): value is { query: string } => typeof (value as { query?: unknown }).query === 'string',
+    validateOutput: (value): value is Record<string, unknown> => typeof value === 'object',
+    async run() { return { results: [{ title: 'Pune weather', snippet: '22°C, clear' }] }; },
+  });
+  const tools = new ToolExecutor({ registry, policy: new PolicyGateway(), config, logger });
+  let step = 0;
+  const provider: ModelProvider = {
+    id: 'scripted',
+    async complete(_messages, _signal, _tools, onText) {
+      step += 1;
+      if (step === 1) { onText?.('Haan, Chrome '); onText?.('khol diya.'); return { kind: 'final', text: 'Haan, Chrome khol diya.' }; }
+      if (step === 2) return { kind: 'tool-calls', calls: [{ toolId: 'web_search', arguments: { query: 'weather Pune today' } }] };
+      onText?.('Today in Pune it is 22°C and clear.');
+      return { kind: 'final', text: 'Today in Pune it is 22°C and clear.' };
+    },
+  };
+  let shown = '';
+  const reply = await runAgent('Hi, can you tell me the today\'s weather?', AbortSignal.timeout(5_000), {
+    provider, tools, config, session: new Session(), logger, environment, onText: text => { shown += text; },
+  });
+  assert.doesNotMatch(shown, /Chrome/u, 'the guess never reached the screen or the voice');
+  assert.match(shown, /22°C/u);
+  assert.match(reply, /22°C/u);
+});
+
+test('a held reply that is kept is still shown', async () => {
+  const tools = new ToolExecutor({ registry: new ToolRegistry(), policy: new PolicyGateway(), config, logger });
+  const provider: ModelProvider = {
+    id: 'scripted',
+    async complete(_messages, _signal, _tools, onText) { onText?.('I cannot check the weather here.'); return { kind: 'final', text: 'I cannot check the weather here.' }; },
+  };
+  let shown = '';
+  await runAgent('What is the weather today?', AbortSignal.timeout(5_000), { provider, tools, config, session: new Session(), logger, environment, onText: text => { shown += text; } });
+  assert.equal(shown, 'I cannot check the weather here.');
+});

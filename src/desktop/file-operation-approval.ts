@@ -251,6 +251,11 @@ export class FileOperationApprovalManager implements FileOperationApprovalPort {
     });
   }
 
+  /** Full control: apply edits and new files without a review card (deletions still ask). */
+  approveEditsAutomatically(): void {
+    this.#approveEdits = true;
+  }
+
   async approve(id: string, confirmation?: string): Promise<void> {
     const pending = this.#pending.get(id);
     if (!pending) throw new Error('This file review is no longer active.');

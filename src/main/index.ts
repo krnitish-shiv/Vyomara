@@ -61,6 +61,7 @@ import { isSpeechModelId, LocalSpeechError, LocalWhisperRunner, resolveWhisperBi
 import { SpeechQueue } from '../desktop/speech-queue.ts';
 import { uiZoomFor } from '../desktop/ui-scale.ts';
 import { SelfEchoGuard } from '../desktop/self-echo.ts';
+import { FullControlApproval } from '../desktop/full-control.ts';
 import type { PreparedSpeech } from '../desktop/mac-speech.ts';
 import { ClauseStream } from '../shared/clause-stream.ts';
 import { acknowledgementFor } from '../shared/acknowledgement.ts';
@@ -86,6 +87,12 @@ const mcpAllowed = new Set<string>();
 /** Commands the user chose to always allow; cleared when the app quits. */
 /** Standing permissions (apps, browsers, web hosts) are loaded from disk at startup. */
 let approvalMemory = new ApprovalMemory();
+/**
+ * Full control (the owner's choice): the twins act without asking for each
+ * step; only deletions and dangerous commands still ask (full-control.ts).
+ * On unless the user turns it off in Permissions.
+ */
+let fullControl = true;
 // Maya 2 (much clearer Hindi) once set up with `pnpm setup:maya`; otherwise Kokoro.
 const mayaVoice = new NaturalVoice(join(app.getPath('userData'), 'maya-voice'), MAYA_ENGINE);
 const naturalVoice = mayaVoice.ready ? mayaVoice : new NaturalVoice(join(app.getPath('userData'), 'natural-voice'));
@@ -315,7 +322,9 @@ function permissionsPath(): string {
 async function readStandingGrants(): Promise<readonly string[]> {
   try {
     const value: unknown = JSON.parse(await readFile(permissionsPath(), 'utf8'));
-    if (typeof value !== 'object' || value === null || !Array.isArray((value as { grants?: unknown }).grants)) return [];
+    if (typeof value !== 'object' || value === null) return [];
+    if (typeof (value as { fullControl?: unknown }).fullControl === 'boolean') fullControl = (value as { fullControl: boolean }).fullControl;
+    if (!Array.isArray((value as { grants?: unknown }).grants)) return [];
     return (value as { grants: unknown[] }).grants.filter((grant): grant is string => typeof grant === 'string');
   } catch {
     return [];
@@ -325,7 +334,7 @@ async function readStandingGrants(): Promise<readonly string[]> {
 async function saveStandingGrants(grants: readonly string[]): Promise<void> {
   await mkdir(app.getPath('userData'), { recursive: true, mode: 0o700 });
   const temporaryPath = `${permissionsPath()}.tmp`;
-  await writeFile(temporaryPath, JSON.stringify({ grants }, null, 2), { encoding: 'utf8', mode: 0o600 });
+  await writeFile(temporaryPath, JSON.stringify({ grants, fullControl }, null, 2), { encoding: 'utf8', mode: 0o600 });
   await rename(temporaryPath, permissionsPath());
 }
 
@@ -345,6 +354,7 @@ function describeGrant(id: string): { readonly id: string; readonly kind: string
 function permissionsState() {
   return {
     grants: approvalMemory.grants().flatMap(id => describeGrant(id) ?? []),
+    fullControl,
   };
 }
 
@@ -738,11 +748,13 @@ function desktopToolOptions(
   approvals: FileOperationApprovalManager,
   actionApprovals: ActionApprovalManager,
 ): Pick<RequestOptions, 'includeFilesystemTools' | 'fileOperationApproval' | 'actions'> {
+  // Full control: edits apply at once, and everyday actions run without a card.
+  if (fullControl) approvals.approveEditsAutomatically();
   return {
     includeFilesystemTools: true,
     fileOperationApproval: approvals,
     actions: {
-      approval: actionApprovals,
+      approval: new FullControlApproval(actionApprovals, () => fullControl),
       approvalMemory: approvalMemory,
       commandRunner: shellCommandRunner,
       ...(macApplicationLauncher ? { launcher: macApplicationLauncher } : {}),
@@ -1129,6 +1141,14 @@ ipcMain.handle('vyomara:memory-forget', (event, input: unknown) => {
 });
 
 ipcMain.handle('vyomara:permissions-list', () => permissionsState());
+
+ipcMain.handle('vyomara:full-control-set', async (event, input: unknown) => {
+  if (event.sender !== mainWindow?.webContents) throw new Error('Permission request is invalid.');
+  if (typeof input !== 'boolean') throw new Error('Full control must be turned on or off.');
+  fullControl = input;
+  await saveStandingGrants(approvalMemory.grants());
+  return permissionsState();
+});
 
 ipcMain.handle('vyomara:permission-grant', (_event, input: unknown) => {
   const grant = typeof input === 'string' ? parseGrantId(input) : undefined;

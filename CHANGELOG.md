@@ -49,6 +49,12 @@ All notable changes to Vyomara are listed here. Versions follow
   postal PIN code still are.
 
 ### Replies (from the owner's first real test)
+- **Full control** (on by default, Permissions): the twins search, open, run
+  commands, and edit files without asking; only deletions, quitting an app, and
+  dangerous commands (sudo, rm -rf, force-push, disk erase…) still ask (ADR-0032).
+- A guessed answer to a question that needs a tool (weather, time, "open …") is
+  no longer shown or spoken before the tool runs; voice-mode examples that a
+  weak model copied into its reply ("Chrome khol diya") are gone.
 - Replies stay in Roman Hinglish when you speak Hinglish, never Devanagari;
   the voice converts common Hindi words itself so it still pronounces them
   right.

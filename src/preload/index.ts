@@ -79,6 +79,9 @@ const api: VyomaraDesktopApi = {
   listPermissions() {
     return ipcRenderer.invoke('vyomara:permissions-list');
   },
+  setFullControl(enabled: boolean) {
+    return ipcRenderer.invoke('vyomara:full-control-set', enabled);
+  },
   grantPermission(id: string) {
     return ipcRenderer.invoke('vyomara:permission-grant', id);
   },

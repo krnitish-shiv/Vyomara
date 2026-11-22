@@ -1154,3 +1154,10 @@ body::after {
 .topbar { border-radius: 12px 12px 0 0; }
 .workspace { border-radius: 0 0 12px 12px; }
 @media (max-height: 720px) { .app-shell { padding: 4px 4px 6px; } }
+
+/* Full control switch in Permissions. */
+.full-control-row { display: flex; align-items: center; gap: 12px; margin: 0 0 14px; padding: 12px; border: 1px solid var(--glass-border-strong); border-radius: 12px; background: linear-gradient(135deg, rgba(70, 100, 230, .18), rgba(140, 90, 240, .12)); box-shadow: var(--glass-highlight); cursor: pointer; position: relative; }
+.full-control-text { display: grid; gap: 4px; flex: 1; }
+.full-control-text strong { color: #eef0ff; font-size: 13px; }
+.full-control-text small { color: #aab6d6; font-size: 11px; line-height: 1.5; }
+.full-control-row .pip-toggle-input { position: absolute; opacity: 0; width: 1px; height: 1px; }

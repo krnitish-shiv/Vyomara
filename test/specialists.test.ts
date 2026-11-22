@@ -112,6 +112,7 @@ test('the spoken-request note keeps replies in Roman letters for every voice', a
   // The owner reads Roman Hinglish: replies are never written in Devanagari, whatever the voice.
   for (const note of [spokenRequestNote('vyom', { devanagariVoice: true }), spokenRequestNote('vyomara')]) {
     assert.match(note, /Never write Devanagari/);
-    assert.match(note, /Roman Hinglish/);
+    assert.match(note, /Hinglish written in Roman letters/);
+    assert.doesNotMatch(note, /Chrome/, 'no action example a weak model could copy into its reply');
   }
 });

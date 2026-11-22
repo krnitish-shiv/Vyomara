@@ -92,6 +92,8 @@ export interface DesktopPermission {
 
 export interface DesktopPermissions {
   readonly grants: readonly DesktopPermission[];
+  /** The twins act without asking; only deletions and dangerous commands still ask. */
+  readonly fullControl: boolean;
 }
 
 export interface DesktopModelInfo {
@@ -252,6 +254,7 @@ export interface VyomaraDesktopApi {
   /** Grant IDs look like "app:Visual Studio Code", "browser:Google Chrome", "host:react.dev". */
   grantPermission(id: string): Promise<DesktopPermissions>;
   revokePermission(id: string): Promise<DesktopPermissions>;
+  setFullControl(enabled: boolean): Promise<DesktopPermissions>;
   onPlan(listener: (plan: DesktopPlan) => void): () => void;
   listModels(): Promise<DesktopModelList>;
   selectModel(model: string): Promise<DesktopProviderStatus>;

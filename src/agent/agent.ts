@@ -764,6 +764,9 @@ async function runAgentTask(
   const typed = prompt;
   // Small talk never runs tools (see isSmallTalk).
   const smallTalk = isSmallTalk(prompt);
+  // Requests that should start with a tool (see holdThisStep in the loop).
+  const expectsToolFirst = !smallTalk && (asksForCurrentInfo(prompt) || asksForBrowser(prompt));
+  let heldText = '';
   const project = (options.environment ?? detectEnvironment([...session.messages(), { role: 'user', content: typed }])).activeProject;
   prompt = (await expandSlashCommand(typed, project)).prompt;
   const start = Date.now();
@@ -855,9 +858,19 @@ async function runAgentTask(
     pendingNudge = undefined;
     const toolsForTurn = toolCalls < config.maxToolCalls ? modelTools : [];
     let firstChunk = true;
+    // A request that needs a tool first (current facts, opening something):
+    // a reply written before any tool ran is usually a guess that gets sent
+    // back, so it is held instead of being shown and spoken, and released
+    // only if it is kept.
+    const holdThisStep = toolCalls === 0 && expectsToolFirst;
+    heldText = '';
     const iterationText = onText === undefined
       ? undefined
       : (text: string): void => {
+        if (holdThisStep) {
+          heldText += text;
+          return;
+        }
         if (firstChunk && streamedSomething) onText('\n\n');
         firstChunk = false;
         streamedSomething = true;
@@ -931,6 +944,12 @@ async function runAgentTask(
           : wrongScript ? ROMAN_HINGLISH_NUDGE
           : CONTINUE_NUDGE;
         continue;
+      }
+      // A held reply was kept after all: show and speak it now.
+      if (heldText !== '' && onText) {
+        if (streamedSomething) onText('\n\n');
+        streamedSomething = true;
+        onText(links.expand(heldText));
       }
       return finish(response.text, iteration);
     }

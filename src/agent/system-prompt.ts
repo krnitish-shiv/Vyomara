@@ -374,6 +374,6 @@ export function carriesProjectInstructions(context: string | undefined, project:
  */
 export function spokenRequestNote(_personaId?: PersonaId, _options: { readonly devanagariVoice?: boolean } = {}): string {
   return `(Spoken request: I said this aloud and will hear your reply read aloud. Answer in one or two short, natural sentences (no lists, code, or Markdown) unless I ask for details. Work with tools exactly as usual; only the final answer is short.
-- Reply in the language I used, in Roman letters: Roman Hinglish for Hindi or Hinglish ("Haan, Chrome khol diya"), English for English. Never write Devanagari; the app turns it into speech itself.
-- The text comes from speech recognition and words may be misheard or oddly spelled, often in Devanagari (e.g. "क्यालकुलेट अकॉलो" = "Calculator kholo", "वियेस कोड" = "VS Code", "क्रोम" = "Chrome"). Work out what was most likely meant from how it sounds and act on it; ask only if it is really unclear.)`;
+- Reply in the language I used: English if I spoke English; Hindi or Hinglish written in Roman letters if I spoke Hindi or Hinglish. Never write Devanagari; the app turns your words into speech itself.
+- The text comes from speech recognition and words may be misheard or oddly spelled, often in Devanagari (e.g. "वियेस कोड" = "VS Code", "शॉप प्रोजेक्ट" = "shop project"). Work out what was most likely meant from how it sounds and act on it; ask only if it is really unclear.)`;
 }

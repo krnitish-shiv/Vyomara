@@ -60,6 +60,25 @@ export function PermissionsPanel({
         <button className="history-close" type="button" onClick={onClose}>Close</button>
       </div>
       <div className="history-content" aria-live="polite">
+        <label className="full-control-row">
+          <span className="full-control-text">
+            <strong>Full control</strong>
+            <small>
+              {state?.fullControl
+                ? `${assistantName} searches, opens, runs commands, and edits files without asking. Still asks before deleting files or dangerous commands (sudo, rm -rf, force-push, disk erase).`
+                : `${assistantName} asks before each action.`}
+            </small>
+          </span>
+          <input
+            className="pip-toggle-input"
+            type="checkbox"
+            role="switch"
+            checked={state?.fullControl ?? false}
+            disabled={state === undefined}
+            onChange={event => void change(() => window.vyomara.setFullControl(event.currentTarget.checked))}
+          />
+          <span className="pip-toggle-switch" aria-hidden="true" />
+        </label>
         <p className="history-review-title">{assistantName} does these without asking</p>
         {state === undefined && !error ? (
           <p className="history-message" role="status">Loading…</p>
@@ -109,7 +128,9 @@ export function PermissionsPanel({
         {error && <p className="history-message history-error" role="alert">{error}</p>}
       </div>
       <p className="history-privacy">
-        Always reviewed: file edits, new files, and deletions. Shell commands can be allowed per folder from their card, until Vyomara quits.
+        {state?.fullControl
+          ? 'Always reviewed: deletions and dangerous commands. Edits can be undone with “undo karo”.'
+          : 'Always reviewed: file edits, new files, and deletions. Shell commands can be allowed per folder from their card, until Vyomara quits.'}
         Every action still appears in the step list and under “Verified actions”.
       </p>
     </aside>
