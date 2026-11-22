@@ -95,3 +95,23 @@ Aap
   - Phase 1, identity: profiles, the three memories with privacy, the twin bond.
   - Phase 2, life and reach: heart, diary, opinions, task manager, knowledge index, scheduler, Communication pack, tester and reviewer.
   - Phase 3, empire: growth, proactive behaviour, Creative, Finance and Learning, screen vision.
+
+### The ten teams (2026-11-22, chosen from a whole life rather than from today's code)
+
+| # | Team | Lead | Members |
+|---|---|---|---|
+| 1 | Engineering | Vishwa | Architect, Coder, Debugger, Tester, Reviewer, DevOps |
+| 2 | Research | Khoj | Web researcher, Fact-checker, Librarian, Summarizer, Analyst, News |
+| 3 | Communication & Writing | Sandesh | Writer, Editor, Translator, Inbox, Meetings, Relationships |
+| 4 | Planner | Samay | Calendar, Reminders, Tasks, Routines, Brief, Focus |
+| 5 | Money | Kosh | Expenses, Bills, Budget, Shopping, Invest, Tax |
+| 6 | Home & Health | Griha | Groceries, Kitchen, Home services, Fitness, Rest, Medicine |
+| 7 | Travel | Yatra | Trip planner, Tickets, Stays, Local guide, Commute, Packing |
+| 8 | Learning & Career | Guru | Teacher, Language coach, Practice, Courses, Career, Interview |
+| 9 | Creative & Media | Kala | Designer, Editor, Slides, Music, Photos, Social |
+| 10 | Devices & Security | Kavach | Mac health, Operator, Files, Backup, Security, Smart devices |
+
+**Growing the teams:**
+- Add a member to an existing team first.
+- Split a team once it has more than 7 members, or once it is doing two different kinds of work.
+- Likely later teams: Legal & Documents, Family & Kids, Business.
