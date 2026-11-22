@@ -19,6 +19,12 @@ Speech used to play with `afplay`, outside the app. Chromium's echo canceller ca
    - About 0.4 s of loud input (6 frames above RMS 0.035, measured after echo cancellation) counts as the user talking over the twin. The twin stops and listens.
    - The system voice (`say`) still mutes the microphone, because the echo canceller cannot hear it.
 
+## Update (2026-11-22)
+
+In the owner's first real test the twin seemed to hear itself. The echo canceller has not been proven on real speakers, so:
+- Barge-in is **off** (`ALLOW_BARGE_IN = false`). The microphone is muted while the twin speaks and for 600 ms after, up from 250 ms.
+- `SelfEchoGuard` in the main process remembers the lines just spoken. It drops any transcript that is mostly those words (≥70% of its consonant skeletons) while the twin is speaking or within 6 s after.
+
 ## Consequences
 
 - The thresholds are conservative and untested against real speakers and rooms. If the twin interrupts itself, raise `BARGE_IN_RMS` or `BARGE_IN_FRAMES` in `voice-capture.ts`.

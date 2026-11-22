@@ -60,6 +60,7 @@ import { MacSpeechError, MacSpeechRunner } from '../desktop/mac-speech.ts';
 import { isSpeechModelId, LocalSpeechError, LocalWhisperRunner, resolveWhisperBinary, SPEECH_MODEL_IDS, SPEECH_MODELS } from '../desktop/local-whisper.ts';
 import { SpeechQueue } from '../desktop/speech-queue.ts';
 import { uiZoomFor } from '../desktop/ui-scale.ts';
+import { SelfEchoGuard } from '../desktop/self-echo.ts';
 import type { PreparedSpeech } from '../desktop/mac-speech.ts';
 import { ClauseStream } from '../shared/clause-stream.ts';
 import { acknowledgementFor } from '../shared/acknowledgement.ts';
@@ -96,6 +97,9 @@ const macSpeechRunner = new MacSpeechRunner(undefined, undefined, naturalVoice);
  * the user can talk over Vyom to interrupt (barge-in). If the window cannot
  * play it, afplay plays the file, so a reply is never silent.
  */
+/** Drops transcripts that are only the twin's own words coming back through the microphone. */
+const selfEcho = new SelfEchoGuard();
+
 let audioSequence = 0;
 const audioWaiters = new Map<number, (status: 'completed' | 'cancelled' | 'failed') => void>();
 macSpeechRunner.setFilePlayer(file => {
@@ -173,6 +177,7 @@ function startLiveSpeech(requestId: string): LiveSpeech {
       play: prepared => inSpeechTurn(() => macSpeechRunner.play(prepared)),
       discard: prepared => macSpeechRunner.discard(prepared),
     }, speaking => {
+      if (!speaking) selfEcho.noteEnded();
       if (mainWindow && !mainWindow.isDestroyed()) mainWindow.webContents.send('vyomara:live-speech', { requestId, speaking });
     }),
   };
@@ -181,7 +186,10 @@ function startLiveSpeech(requestId: string): LiveSpeech {
 }
 
 function finishLiveSpeech(live: LiveSpeech): void {
-  for (const clause of live.clauses.end()) live.queue.enqueue(clause);
+  for (const clause of live.clauses.end()) {
+    selfEcho.noteSpoken(clause);
+    live.queue.enqueue(clause);
+  }
   void live.queue.close().finally(() => {
     if (liveSpeech === live) liveSpeech = undefined;
   });
@@ -985,6 +993,7 @@ ipcMain.handle('vyomara:chat-send', async (_event, input: unknown) => {
           send('vyomara:chat-text', { requestId: request.requestId, text });
           if (live) for (const clause of live.clauses.push(text)) {
             live.spoke = true;
+            selfEcho.noteSpoken(clause);
             live.queue.enqueue(clause);
           }
         },
@@ -993,7 +1002,9 @@ ipcMain.handle('vyomara:chat-send', async (_event, input: unknown) => {
           // Speak first, then work: a short line when the first tool starts and nothing was said yet.
           if (live && !live.spoke && activity.status === 'running') {
             live.spoke = true;
-            live.queue.enqueue(acknowledgementFor(activity.toolId, activity.label, personaFor(persona).gender));
+            const line = acknowledgementFor(activity.toolId, activity.label, personaFor(persona).gender);
+            selfEcho.noteSpoken(line);
+            live.queue.enqueue(line);
           }
         },
         onPlan: steps => send('vyomara:plan', { requestId: request.requestId, steps }),
@@ -1337,7 +1348,13 @@ ipcMain.handle('vyomara:speech-transcribe', async (event, input: unknown) => {
     // "Best" (hi): try auto-detect first so English stays English, falling back to Hindi
     // when auto-detect picks a wrong script. "Fast" (en) keeps its fixed language.
     const languages = getLocalWhisperRunner().model.language === 'hi' ? ['auto', 'hi'] : [];
-    return await whisperServer.transcribe(input, languages);
+    const text = await whisperServer.transcribe(input, languages);
+    // The twin's own voice coming back through the microphone is never taken as a request.
+    if (text && selfEcho.isEcho(text)) {
+      console.error(JSON.stringify({ event: 'speech.self-echo-dropped', chars: text.length }));
+      return '';
+    }
+    return text;
   } catch (error) {
     throw new Error(error instanceof Error ? error.message : 'The phrase could not be transcribed.');
   }
@@ -1346,7 +1363,12 @@ ipcMain.handle('vyomara:speech-transcribe', async (event, input: unknown) => {
 ipcMain.handle('vyomara:speech-speak', async (_event, input: unknown) => {
   // The renderer stops recording while Vyom speaks, so the reply is not heard as a command.
   try {
-    return await inSpeechTurn(() => macSpeechRunner.speak(input, personaFor(persona).gender));
+    if (typeof input === 'string') selfEcho.noteSpoken(input);
+    try {
+      return await inSpeechTurn(() => macSpeechRunner.speak(input, personaFor(persona).gender));
+    } finally {
+      selfEcho.noteEnded();
+    }
   } catch (error) {
     throw new Error(publicErrorMessage(error));
   }

@@ -16,8 +16,10 @@ All notable changes to Vyomara are listed here. Versions follow
   switching twins no longer re-reads the prompt.
 - A request spoken with pauses is transcribed again as one recording, so
   words cut at the pauses come out right.
-- Talk over Vyom or Vyomara to interrupt them: their voice now plays inside
-  the app, so the echo canceller removes it from the microphone (ADR-0031).
+- The twins no longer hear themselves: the microphone stays muted while they
+  speak and for 0.6 s after, and anything heard that matches what the twin just
+  said is dropped. Talking over the twin to interrupt is off for now (press the
+  orb); their voice plays inside the app, ready for it (ADR-0031).
 - The twins say a short line the moment they start working ("Khoj ko de rahi
   hoon", "Ek second, dekh raha hoon"), so you never wait in silence.
 - Your turn ends sooner when the sentence sounds finished and waits longer

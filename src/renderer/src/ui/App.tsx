@@ -30,6 +30,14 @@ import { joinWavs } from '../../../shared/phrase-detector.ts';
 
 /** The speech server accepts up to 16 s of audio per request (MAX_UTTERANCE_BYTES). */
 const MAX_TURN_WAV_BYTES = 44 + 16_000 * 2 * 16;
+/**
+ * Talking over the twin to interrupt (ADR-0031) stays off until the echo
+ * canceller is proven on real speakers: in the owner's test the twin heard
+ * itself. The microphone is muted while the twin speaks; the orb interrupts.
+ */
+const ALLOW_BARGE_IN = false;
+/** The microphone stays muted this long after the twin stops, so the room's echo is not heard. */
+const SPEECH_TAIL_MS = 600;
 import vyomaraWordmark from './assets/vyomara-wordmark.png';
 
 /** "just now", "5 min ago", "2:40 PM", "Yesterday", "Mon", "3 Nov". */
@@ -195,7 +203,7 @@ export function App() {
   const speechPlayer = useRef(new SpeechPlayer(playing => {
     // While the reply plays here and hands-free listening is on, a user who
     // talks over it interrupts it instead of being ignored.
-    if (playing && speakingRef.current && voiceListeningRef.current) {
+    if (ALLOW_BARGE_IN && playing && speakingRef.current && voiceListeningRef.current) {
       voiceCapture.current.setBargeIn(() => interruptSpeakingRef.current());
     }
   }));
@@ -404,7 +412,7 @@ export function App() {
       finishLive = undefined;
       setTimeout(() => {
         if (!speakingRef.current) voiceCapture.current.setMuted(false);
-      }, 250);
+      }, SPEECH_TAIL_MS);
     });
   }, []);
 
@@ -778,7 +786,7 @@ export function App() {
         setVoiceTranscript('');
         setTimeout(() => {
           if (!speakingRef.current) voiceCapture.current.setMuted(false);
-        }, 250);
+        }, SPEECH_TAIL_MS);
       });
     speechDone.current = done;
     return done;

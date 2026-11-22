@@ -10,7 +10,7 @@
 const DEVANAGARI: Readonly<Record<string, string>> = {
   'क': 'k', 'ख': 'k', 'ग': 'g', 'घ': 'g', 'ङ': 'n', 'च': 'c', 'छ': 'c', 'ज': 'j', 'झ': 'j', 'ञ': 'n',
   'ट': 't', 'ठ': 't', 'ड': 'd', 'ढ': 'd', 'ण': 'n', 'त': 't', 'थ': 't', 'द': 'd', 'ध': 'd', 'न': 'n',
-  'प': 'p', 'फ': 'f', 'ब': 'b', 'भ': 'b', 'म': 'm', 'य': 'y', 'र': 'r', 'ल': 'l', 'व': 'v', 'श': 's',
+  'प': 'p', 'फ': 'f', 'ब': 'b', 'भ': 'b', 'म': 'm', 'य': '', 'र': 'r', 'ल': 'l', 'व': 'v', 'श': 's',
   'ष': 's', 'स': 's', 'ह': 'h', 'क़': 'k', 'ख़': 'k', 'ग़': 'g', 'ज़': 'j', 'ड़': 'd', 'ढ़': 'd', 'फ़': 'f',
   'ळ': 'l', 'ऋ': 'r',
 };
@@ -35,11 +35,16 @@ const STOPWORDS = new Set([
 export function skeleton(word: string): string {
   const lower = word.toLowerCase().normalize('NFC');
   if (/[ऀ-ॿ]/u.test(lower)) {
-    return [...lower.normalize('NFD').normalize('NFC')].map(character => DEVANAGARI[character] ?? (/[a-z0-9]/u.test(character) ? character : '')).join('').replace(/(.)\1+/gu, '$1');
+    return unify([...lower.normalize('NFD').normalize('NFC')].map(character => DEVANAGARI[character] ?? (/[a-z0-9]/u.test(character) ? character : '')).join(''));
   }
   let roman = lower.normalize('NFD').replace(/\p{M}/gu, '');
   for (const [pattern, sound] of ROMAN_SOUNDS) roman = roman.replace(pattern, sound);
-  return roman.replace(/[aeiouy]/gu, '').replace(/[^a-z0-9]/gu, '').replace(/(.)\1+/gu, '$1');
+  return unify(roman.replace(/[aeiouy]/gu, '').replace(/[^a-z0-9]/gu, ''));
+}
+
+/** Sounds both scripts spell differently: "Chrome"/"क्रोम", "chai"/"चाय" (c ≈ k). */
+function unify(key: string): string {
+  return key.replace(/c/gu, 'k').replace(/(.)\1+/gu, '$1');
 }
 
 /** The distinct skeletons of a text's meaningful words. */
