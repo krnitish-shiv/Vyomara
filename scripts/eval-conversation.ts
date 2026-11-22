@@ -37,6 +37,7 @@ const CASES: readonly Case[] = [
   { prompt: 'Google Chrome kholvae.', check: (reply, tools) => tools.includes('open_application') ? (devanagari(reply) ? 'replied in Devanagari' : undefined) : `did not call open_application (${tools.join(', ') || 'no tools'})` },
   { prompt: 'Mujhe ek chhota sa joke sunao.', check: (reply, tools) => tools.length > 0 ? `ran tools: ${tools.join(', ')}` : devanagari(reply) ? 'replied in Devanagari' : undefined },
   { prompt: 'Aaj Delhi ka mausam kaisa hai?', check: (reply, tools) => tools.some(tool => tool === 'weather' || tool === 'web_search') ? (devanagari(reply) ? 'replied in Devanagari' : undefined) : 'did not look up the weather' },
+  { prompt: "Hi, can you tell me the today's weather?", check: (reply, tools) => !tools.some(tool => tool === 'weather' || tool === 'web_search') ? 'did not look up the weather' : /chrome/iu.test(reply) ? 'mentioned Chrome' : devanagari(reply) ? 'replied in Devanagari' : undefined },
   { prompt: 'Abhi kitne baje hain?', check: (_reply, tools) => tools.includes('current_time') ? undefined : 'did not check the time' },
 ];
 

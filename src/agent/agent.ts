@@ -421,7 +421,7 @@ const CLAIMED_ACTION_NUDGE =
  * "I've opened it", "ho gaya") although no tool ran.
  */
 export function claimsActionDone(text: string): boolean {
-  return /\b(?:khol(?: diya| di| diye|ega|egi|ta hoon|ti hoon| raha hoon| rahi hoon)|open(?:ed)? kar (?:diya|di|raha|rahi)|open ho gaya|chala (?:diya|di)|chalu kar (?:diya|di)|band kar (?:diya|di)|bhej (?:diya|di)|play kar (?:diya|di|raha|rahi)|laga (?:diya|di))\b/iu.test(text) ||
+  return /\b(?:khol(?: diya| di| diye|ega|egi|ta hoon|ti hoon| raha hoon| rahi hoon)|khole? rah[ai] h(?:oon|u|un)|khol(?:ne)? (?:ja )?rah[ai] h(?:oon|u|un)|open(?:ed)? kar (?:diya|di|raha|rahi)|open ho gaya|chala (?:diya|di)|chalu kar (?:diya|di)|band kar (?:diya|di)|bhej (?:diya|di)|play kar (?:diya|di|raha|rahi)|laga (?:diya|di))\b/iu.test(text) ||
     /\b(?:i(?:'ve| have)? (?:opened|launched|started|closed|played|sent)|(?:is|has been) (?:now )?(?:opened|open|launched|playing)|opening (?:it|chrome|the app) now)\b/iu.test(text) ||
     /(?:खोल दिया|खोल दी|खोलेगा|खोलेगी|चला दिया|बंद कर दिया|भेज दिया)/u.test(text);
 }
@@ -440,6 +440,18 @@ export function isSmallTalk(prompt: string): boolean {
 }
 
 const SMALL_TALK_REFUSAL = 'This message is a greeting or small talk, not a task: no tool is needed. Reply in one short, warm sentence in the user\'s language.';
+
+/**
+ * The tool a current-facts question needs, when the reply used a different one
+ * ("today's weather?" answered with the clock). Undefined when nothing is missing.
+ */
+export function missingLookup(prompt: string, toolsUsed: ReadonlySet<string>): string | undefined {
+  const text = prompt.toLowerCase();
+  const usedWeb = toolsUsed.has('web_search') || toolsUsed.has('fetch_url') || toolsUsed.has('browser');
+  if (/\b(?:weather|forecast|temperature|rain|mausam|baarish|barish|garmi|thand)\b/u.test(text) && !toolsUsed.has('weather') && !usedWeb) return 'weather';
+  if (/\b(?:news|headlines|khabar|khabrein|samachar)\b/u.test(text) && !toolsUsed.has('news_headlines') && !usedWeb) return 'news_headlines';
+  return undefined;
+}
 
 const UNFINISHED_PLAN_NUDGE =
   'Your reply is a checklist with steps still open. Do not stop at the plan: carry out the next open step now with tools, then keep going until every step is done, and only then give your final answer.';
@@ -792,6 +804,8 @@ async function runAgentTask(
   let pendingNudge: string | undefined;
   let attemptedEdit = false;
   let usedWebTool = false;
+  /** Every tool called in this request (for missingLookup). */
+  const toolsUsedThisRequest = new Set<string>();
   const links = new LinkAliases();
   const images = options.images ?? [];
   // A long conversation keeps its early turns as a summary instead of losing them.
@@ -926,7 +940,8 @@ async function runAgentTask(
       const hasWebTools = modelTools.some(tool => WEB_TOOLS.has(tool.id));
       const gaveUpOnWeb = !usedWebTool && hasWebTools && claimsNoWebAccess(response.text);
       // "Latest React Native version?" answered without a single tool call: from stale memory.
-      const answeredFromMemory = toolCalls === 0 && hasWebTools && asksForCurrentInfo(prompt);
+      const neededTool = hasWebTools ? missingLookup(prompt, toolsUsedThisRequest) : undefined;
+      const answeredFromMemory = hasWebTools && ((toolCalls === 0 && asksForCurrentInfo(prompt)) || neededTool !== undefined);
       const askedToLookItUp = hasWebTools && offersToLookItUp(response.text);
       // Roman Hinglish gets Roman letters back, typed or spoken (the voice converts it itself).
       const wrongScript = isRomanHinglish(typed) && isMostlyDevanagari(response.text);
@@ -939,7 +954,9 @@ async function runAgentTask(
           : unappliedChange ? APPLY_CHANGE_NUDGE
           : unfinishedPlan ? UNFINISHED_PLAN_NUDGE
           : gaveUpOnWeb ? USE_THE_WEB_NUDGE
-          : answeredFromMemory ? LOOK_IT_UP_NUDGE
+          : answeredFromMemory ? (neededTool && modelTools.some(tool => tool.id === neededTool)
+            ? `The user asked about ${neededTool === 'weather' ? 'the weather' : 'the news'}, and you have not looked it up yet. Call the ${neededTool} tool now${neededTool === 'weather' ? ' with the city the user named, or the one you know they live in from memory or earlier in this conversation; if you do not know any city, ask which city in one short question' : ''}, then answer from what it returns, in the language of the user's message.`
+            : LOOK_IT_UP_NUDGE)
           : askedToLookItUp ? DO_NOT_ASK_NUDGE
           : wrongScript ? ROMAN_HINGLISH_NUDGE
           : CONTINUE_NUDGE;
@@ -1055,6 +1072,7 @@ async function runAgentTask(
 
       if (EDIT_TOOLS.has(call.toolId)) attemptedEdit = true;
       if (WEB_TOOLS.has(call.toolId)) usedWebTool = true;
+      toolsUsedThisRequest.add(call.toolId);
       options.onToolActivity?.({ id: toolCallId, toolId: call.toolId, label, status: 'running' });
       logger.emit({ event: 'tool.invoked', ...context, toolId: call.toolId });
       try {

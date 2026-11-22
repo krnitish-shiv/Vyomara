@@ -108,3 +108,14 @@ test('a held reply that is kept is still shown', async () => {
   await runAgent('What is the weather today?', AbortSignal.timeout(5_000), { provider, tools, config, session: new Session(), logger, environment, onText: text => { shown += text; } });
   assert.equal(shown, 'I cannot check the weather here.');
 });
+
+test('more false claims and wrong-tool lookups are caught', async () => {
+  const { claimsActionDone, missingLookup } = await import('../src/agent/agent.ts');
+  assert.equal(claimsActionDone('Main Google Chrome ko khole raha hoon.'), true);
+  assert.equal(claimsActionDone('Chrome kholne ja raha hoon'), true);
+  assert.equal(missingLookup("Hi, can you tell me the today's weather?", new Set(['current_time'])), 'weather');
+  assert.equal(missingLookup('aaj ka mausam kaisa hai', new Set(['weather'])), undefined);
+  assert.equal(missingLookup('aaj ka mausam kaisa hai', new Set(['web_search'])), undefined);
+  assert.equal(missingLookup('latest news batao', new Set()), 'news_headlines');
+  assert.equal(missingLookup('shop project kholo', new Set()), undefined);
+});
