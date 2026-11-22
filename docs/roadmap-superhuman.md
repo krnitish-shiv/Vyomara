@@ -74,3 +74,24 @@ Aap
   - A skills library.
   - Creative, Finance and Learning departments.
   - Screen vision.
+
+### Final design (2026-11-22, approved direction)
+
+- **Selective conversation.** Whoever is called answers, and only they. "Vyomara, …" gets Vyomara; "Vyom, …" gets Vyom. With no name, the twin already in the conversation answers. The other twin never speaks out of turn and never joins in.
+- **Two people.** Each twin has their own Self: identity, personality, voice, heart, opinions, life, relationships, growth, and their own mind.
+- **Three kinds of memory per twin:**
+  - a private vault (own diary and feelings, plus what the owner told only that twin, e.g. "Vyom ko mat batana"), which even the other twin cannot read
+  - a record about each other (profiles, habits, who did what for the owner), which both know
+  - shared facts about the owner, which both know
+  - Secrets (passwords, OTP, cards, Aadhaar, PAN) are never stored.
+- **The twin bond.** A twin may quietly ask the other twin while working, but still answers in their own voice.
+- **The shared house:**
+  - Empire rules: safety, privacy, quality loop, resource manager (fitting 24 GB), fallback.
+  - Services: profiles, knowledge index, awareness, skills, scheduler.
+  - Eight skill packs: departments that are light (a brief plus tools, loaded on demand).
+  - Engines and connectors.
+- **Build order:**
+  - Phase 0, foundation: fast talker, model router, resource manager, fallback, quality loop.
+  - Phase 1, identity: profiles, the three memories with privacy, the twin bond.
+  - Phase 2, life and reach: heart, diary, opinions, task manager, knowledge index, scheduler, Communication pack, tester and reviewer.
+  - Phase 3, empire: growth, proactive behaviour, Creative, Finance and Learning, screen vision.
