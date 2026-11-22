@@ -11,6 +11,9 @@ All notable changes to Vyomara are listed here. Versions follow
   about five times faster than before. Used automatically once installed (ADR-0030).
 - Spoken replies start while they are still being written: the first words
   come in about half a second instead of after the whole answer.
+- "Vyomara" and "Vyom" are recognised far more reliably (from 16 to 29 of 33
+  test clips across nine voices), and the twin you call by name answers;
+  switching twins no longer re-reads the prompt.
 - A request spoken with pauses is transcribed again as one recording, so
   words cut at the pauses come out right.
 - Talk over Vyom or Vyomara to interrupt them: their voice now plays inside

@@ -166,8 +166,14 @@ function phraseKey(text: string): string {
  */
 const NAME_FIXES: readonly (readonly [RegExp, string])[] = [
   // Heard in tests with real and synthetic voices (whisper large-v3-turbo and the Hinglish model).
-  [/(?<![\p{L}\p{M}])(?:vyomara|viomara|vyomra|vyomaara|wyomara|viyomara|biomara|vivaara|vyo\s?mara|vio\s?mara|viv\s?mara)(?![\p{L}\p{M}])/giu, 'Vyomara'],
-  [/(?<![\p{L}\p{M}])(?:viom|wyom|vyom|viyom|biyom|beyom|vyoam|vyaanm|vyaam|viyo|vyo\s?om)(?![\p{L}\p{M}])/giu, 'Vyom'],
+  // The whole name first, including two-word forms ("Viyo maara", "vya maara",
+  // "Vyohmaara", "Vaayomara"), so they never turn into "Vyom maara".
+  [/(?<![\p{L}\p{M}])(?:v|w|b)(?:iew|iy|aay|ay|aa|y|i|a)?(?:o|oh|aa|ah|au|a)?h?\s?m(?:aa|a)r(?:aa|a)(?![\p{L}\p{M}])/giu, 'Vyomara'],
+  [/(?<![\p{L}\p{M}])(?:vyomra|vivaara|viv\s?mara)(?![\p{L}\p{M}])/giu, 'Vyomara'],
+  [/(?<![\p{L}\p{M}])(?:vaaymar|vaymar|vaimar)(?![\p{L}\p{M}])/giu, 'Vyomara'],
+  // "Hey Vyomara" heard as "Haveno maara".
+  [/(?<![\p{L}\p{M}])(?:haveno|hey\s?no|heyno)\s+maa?ra(?![\p{L}\p{M}])/giu, 'Hey Vyomara'],
+  [/(?<![\p{L}\p{M}])(?:viom|wyom|vyom|viyom|biyom|beyom|vyoam|vyaanm|vyaam|vyon|voom|vyoom|vyaan|viyo|vyo\s?om)(?![\p{L}\p{M}])/giu, 'Vyom'],
   // "Vyo," / "Vyo " at the start is the name cut short.
   [/^(?:vyo|vio)(?=[,\s])/iu, 'Vyom'],
   [/(?<![\p{L}\p{M}])(?:व्योमरा|वियोमारा|व्योमारा|विव\s?मारा)(?![\p{L}\p{M}])/gu, 'व्योमारा'],

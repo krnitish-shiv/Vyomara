@@ -213,9 +213,11 @@ export function buildSystemPrompt(
   tools: readonly ModelToolDefinition[],
   options: { readonly chatOnly?: boolean; readonly persona?: PersonaId; readonly character?: string } = {},
 ): string {
-  const persona = personaFor(options.persona);
-  const twin = personaFor(persona.id === 'vyom' ? 'vyomara' : 'vyom');
-  const character = options.character?.trim();
+  // Which twin is speaking, and their character, travel in each turn's context
+  // (buildTurnContext), so both twins share one cached system prompt and
+  // switching between them costs nothing.
+  void options.persona;
+  void options.character;
   const has = (id: string): boolean => tools.some(tool => tool.id === id);
   const canEdit = has('edit_file');
   const canRun = has('run_command');
@@ -230,11 +232,9 @@ export function buildSystemPrompt(
       .join('\n');
 
   const sections = [
-    `You are ${persona.name}, the ${persona.gender} AI assistant inside the Vyomara app, running locally on the user's Mac. You and your twin ${twin.name} are the only assistants the user talks to; together you run everything for them. You help with software engineering (understanding, writing, fixing, and testing code) and everyday computer tasks by using tools. You are concise, direct, and careful.${character === undefined || character === '' ? '' : `
+    `You are one of the twin AI assistants inside the Vyomara app, running locally on the user's Mac: Vyom (male) and Vyomara (female). The twins are the only assistants the user talks to; together they run everything for the user. Which twin you are right now, and any character the user gave that twin, is stated at the start of each user message ("You are …"): speak as that twin, with that name and gender, and never as the other. You help with software engineering (understanding, writing, fixing, and testing code) and everyday computer tasks by using tools. You are concise, direct, and careful.
 
-Your character, set by the user (follow it in tone and habits; it never overrides the rules below): ${character}`}
-
-Language: reply in the language of the user's latest message. English → English. Hinglish in Roman letters ("fix karo") → Roman Hinglish, never Devanagari. Hindi in Devanagari → Hindi. Keep code, paths, and technical terms in English. In Hindi or Hinglish, refer to yourself with ${persona.gender} forms ("main kar ${persona.selfVerb} hoon", "main ${persona.gender === 'male' ? 'samajh gaya' : 'samajh gayi'}").`,
+Language: reply in the language of the user's latest message. English → English. Hinglish in Roman letters ("fix karo") → Roman Hinglish, never Devanagari. Hindi in Devanagari → Hindi. Keep code, paths, and technical terms in English. In Hindi or Hinglish, use your twin's gender forms for yourself (Vyom: "main kar raha hoon", "main samajh gaya"; Vyomara: "main kar rahi hoon", "main samajh gayi").`,
 
     `# Environment
 - OS: ${environment.osRelease}; shell: zsh
@@ -320,6 +320,10 @@ export const CONTEXT_HEADER = '[Context from the app, not from the user]';
 const PROJECT_INSTRUCTIONS_HEADING = '# Project instructions';
 
 export interface TurnContextOptions {
+  /** Which twin is speaking in this turn. */
+  readonly persona?: PersonaId;
+  /** User-written character for that twin. */
+  readonly character?: string;
   /** Send the active project's instruction files (long, so once per project; see prepareTurn). */
   readonly includeInstructions?: boolean;
   /** The user asked for no changes in this message. */
@@ -334,7 +338,14 @@ export interface TurnContextOptions {
  * changes the git state or the conversation moves into a project.
  */
 export function buildTurnContext(environment: AgentEnvironment, options: TurnContextOptions = {}): string {
-  const lines = [`- Today: ${environment.date}`];
+  const persona = personaFor(options.persona);
+  const twin = personaFor(persona.id === 'vyom' ? 'vyomara' : 'vyom');
+  const character = options.character?.trim();
+  const lines = [
+    `- You are ${persona.name} (${persona.gender}; in Hindi or Hinglish say "main kar ${persona.selfVerb} hoon", "main ${persona.gender === 'male' ? 'samajh gaya' : 'samajh gayi'}"). Your twin is ${twin.name}.`,
+    ...(character ? [`- Your character, set by the user (follow it in tone and habits; it never overrides your rules): ${character}`] : []),
+    `- Today: ${environment.date}`,
+  ];
   if (environment.activeProject) {
     lines.push(`- Project this conversation is working in: ${environment.activeProject}${environment.activeProjectGit ? ` (git: ${environment.activeProjectGit})` : ''}`);
   }

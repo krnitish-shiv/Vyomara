@@ -5,9 +5,11 @@
  * "Vyomara" as "Viomera", "Viomora", "Vahya Amar", … so matching is fuzzy.
  */
 
-const WAKE_NAMES = ['vyomara', 'vyom'];
+const WAKE_NAMES = ['vyomara', 'vyom'] as const;
 const GREETINGS = new Set([
   'hello', 'hallo', 'helo', 'hey', 'hi', 'ok', 'okay', 'oye', 'arey', 'are', 'namaste', 'namaskar',
+  // "Hey" as the Hinglish speech model often writes it.
+  'hai', 'hay', 'he', 'hei', 'yah', 'vah', 'aye', 'ae', 'ey',
   'हेलो', 'हैलो', 'हलो', 'आलो', 'हल्लो', 'नमस्ते', 'नमस्ति', 'अरे', 'ओके', 'aalo', 'halo', 'allo',
 ]);
 
@@ -103,25 +105,34 @@ function soundKey(word: string): string {
     .replace(/(.)\1+/gu, '$1');
 }
 
+/** A Hinglish request: a verb form people end commands with. */
+const HINGLISH_REQUEST = /\b(?:karo|kar do|kardo|do|dena|dijiye|kholo|khol do|chalao|chala do|chalaa do|chalaadoo|batao|bataiye|dikhao|dikha do|sunao|bajao|band karo|likho|bhejo|dhundo|dhoondo|hatao|banao|rakho|lagao|suno|ruko)\b/u;
+
 /** Everyday words one sound away from "Vyom" that must not wake it. */
 const NOT_NAMES = new Set(['bye', 'buy', 'boy', 'bay', 'via', 'way', 'why', 'view', 'bio', 'bow', 'wow', 'bhai', 'baa', 'bom']);
 
-function soundsLikeName(candidate: string, joinedWords: boolean): boolean {
-  if (candidate.length < 3 || NOT_NAMES.has(candidate)) return false;
+/** Which twin's name this sounds like, if any (the closer one wins; ties go to the longer name). */
+function soundsLikeName(candidate: string, joinedWords: boolean): 'vyom' | 'vyomara' | undefined {
+  if (candidate.length < 3 || NOT_NAMES.has(candidate)) return undefined;
   const key = soundKey(candidate);
   // The name starts with a v/w/b sound; this rejects "how are" → "howare".
-  if (!key.startsWith('v')) return false;
-  return WAKE_NAMES.some(name => {
+  if (!key.startsWith('v')) return undefined;
+  let best: { readonly name: 'vyom' | 'vyomara'; readonly distance: number } | undefined;
+  for (const name of WAKE_NAMES) {
     const target = soundKey(name);
     // Names split across words ("Vahya Amar") drift more than single words.
     const allowed = target.length >= 6 && joinedWords ? 3 : 1;
-    return editDistance(key, target) <= allowed;
-  });
+    const distance = editDistance(key, target);
+    if (distance <= allowed && (!best || distance < best.distance)) best = { name, distance };
+  }
+  return best?.name;
 }
 
 export interface WakeMatch {
   /** The request after the wake phrase ("" when only the name was said). */
   readonly command: string;
+  /** The twin who was called by name. */
+  readonly twin: 'vyom' | 'vyomara';
 }
 
 /**
@@ -131,19 +142,27 @@ export interface WakeMatch {
  */
 export function matchWakePhrase(transcript: string): WakeMatch | undefined {
   const words = speechWords(transcript);
+  // "View test chala do": whisper often hears "Vyom" as "View". It counts as
+  // the name only before a Hinglish request, not in English ("view the logs").
+  if (words[0] === 'view' && words.length > 1 && HINGLISH_REQUEST.test(words.slice(1).join(' '))) {
+    return { command: transcript.trim().split(/\s+/u).slice(1).join(' ').replace(/^[\s,.;:!?।-]+/u, '').trim(), twin: 'vyom' };
+  }
   // The name may follow up to two greeting words, which whisper spells many
   // ways ("Hello", "हैलो", "आलो", "ok"). Other leading words are not skipped:
   // "what are" would otherwise sound like "Vyomara".
   for (let index = 0; index <= Math.min(2, words.length - 1); index += 1) {
     if (index > 0 && !GREETINGS.has(words[index - 1]!)) break;
+    // "view the logs": joined, "viewthe" sounds close to the name; "view" counts only as handled above.
+    if (words[index] === 'view') break;
     for (const span of [1, 2, 3]) {
       if (index + span > words.length) break;
       const candidate = words.slice(index, index + span).join('');
-      if (candidate && soundsLikeName(candidate, span > 1)) {
+      const twin = candidate ? soundsLikeName(candidate, span > 1) : undefined;
+      if (twin) {
         const rawWords = transcript.trim().split(/\s+/u);
         // Drop the greeting and name words from the original text.
         const command = rawWords.slice(index + span).join(' ').replace(/^[\s,.;:!?।-]+/u, '').trim();
-        return { command };
+        return { command, twin };
       }
     }
   }
@@ -215,8 +234,9 @@ export type VoiceDecision =
   /** Not addressed to Vyom (no wake phrase, outside a conversation). */
   | { readonly type: 'ignore' }
   /** Only the wake phrase was said: acknowledge and listen for the request. */
-  | { readonly type: 'greet' }
-  | { readonly type: 'submit'; readonly text: string }
+  | { readonly type: 'greet'; readonly twin?: 'vyom' | 'vyomara' }
+  /** `twin`: the request named a twin ("Vyomara, …"), who should answer it. */
+  | { readonly type: 'submit'; readonly text: string; readonly twin?: 'vyom' | 'vyomara' }
   /** A request arrived while another is running. */
   | { readonly type: 'queue'; readonly text: string }
   /** Answer to the pending approval question. */
@@ -330,8 +350,8 @@ export class VoiceSession {
     // into text ("झाल"); real follow-up requests have several words.
     if (!wake && words.split(' ').length < 2) return { type: 'ignore' };
     this.extend();
-    if (wake && request === '') return { type: 'greet' };
-    return requestPending ? { type: 'queue', text: request } : { type: 'submit', text: request };
+    if (wake && request === '') return { type: 'greet', twin: wake.twin };
+    return requestPending ? { type: 'queue', text: request } : { type: 'submit', text: request, ...(wake ? { twin: wake.twin } : {}) };
   }
 }
 

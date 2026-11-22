@@ -376,7 +376,7 @@ test('system prompt describes the environment and only the capabilities that exi
     { ...environment, activeProject: shop, activeProjectGit: 'branch main, 2 changed files', projectInstructions: [{ file: 'AGENTS.md', text: 'Run pnpm check.' }] },
     { includeInstructions: true, readOnly: true },
   );
-  assert.match(context, /^\[Context from the app, not from the user\]\n- Today: 2026-11-06 \(Friday\)\n/);
+  assert.match(context, /^\[Context from the app, not from the user\]\n- You are Vyom \(male[^\n]*Your twin is Vyomara\.\n- Today: 2026-11-06 \(Friday\)\n/);
   assert.match(context, /Project this conversation is working in: \/Users\/tester\/Projects\/shop \(git: branch main, 2 changed files\)/);
   assert.match(context, /asked for no changes/);
   assert.match(context, /# Project instructions \(\/Users\/tester\/Projects\/shop\)[\s\S]*## AGENTS\.md\nRun pnpm check\./);
@@ -897,12 +897,15 @@ test('the system prompt names the chosen assistant and its grammatical gender', 
   const { buildSystemPrompt } = await import('../src/agent/system-prompt.ts');
   const environment = { date: '2026-11-06', osRelease: 'test', home: '/Users/test', projectFolders: [] } as unknown as Parameters<typeof buildSystemPrompt>[0];
   const { spokenRequestNote } = await import('../src/agent/system-prompt.ts');
-  const female = buildSystemPrompt(environment, [], { persona: 'vyomara' });
-  assert.match(female, /You are Vyomara, the female AI assistant/);
+  const { buildTurnContext } = await import('../src/agent/system-prompt.ts');
+  // Both twins share one system prompt (it stays cached when the user switches); the turn says who speaks.
+  assert.equal(buildSystemPrompt(environment, [], { persona: 'vyomara' }), buildSystemPrompt(environment, [], { persona: 'vyom' }));
+  const female = buildTurnContext(environment, { persona: 'vyomara' });
+  assert.match(female, /You are Vyomara \(female/);
   assert.match(female, /main kar rahi hoon/);
   assert.match(spokenRequestNote('vyomara'), /Never write Devanagari/);
-  const male = buildSystemPrompt(environment, []);
-  assert.match(male, /You are Vyom, the male AI assistant/);
+  const male = buildTurnContext(environment);
+  assert.match(male, /You are Vyom \(male/);
   assert.match(male, /main kar raha hoon/);
   assert.match(spokenRequestNote(), /Never write Devanagari/);
 });

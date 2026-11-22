@@ -177,6 +177,9 @@ export function App() {
   const [vyomSpeaking, setVyomSpeaking] = useState(false);
   /** Which assistant answers: Vyom (male voice) or Vyomara (female voice). */
   const [persona, setPersonaState] = useState<PersonaId>(DEFAULT_PERSONA);
+  // The current twin for handlers registered once (voice commands).
+  const personaRef = useRef<PersonaId>(DEFAULT_PERSONA);
+  personaRef.current = persona;
   const [personaSaving, setPersonaSaving] = useState(false);
   const [personaMenuOpen, setPersonaMenuOpen] = useState(false);
   const personaPicker = useRef<HTMLDivElement>(null);
@@ -828,11 +831,12 @@ export function App() {
     const decision = voiceSession.current.decide(transcript, currentRequestPending.current);
     switch (decision.type) {
       case 'greet':
-        speak('Haan, boliye.');
+        // "Vyomara?" while Vyom is selected: Vyomara answers.
+        void switchTwinQuietly(decision.twin).then(() => speak('Haan, boliye.'));
         break;
       case 'submit':
         cue('sent');
-        void submitPrompt(decision.text, true);
+        void switchTwinQuietly(decision.twin).then(() => submitPrompt(decision.text, true));
         break;
       case 'queue':
         cue('sent');
@@ -972,6 +976,18 @@ export function App() {
   }
 
   /** Switch between Vyom and Vyomara; the new assistant greets in its own voice. */
+  /** The user called the other twin by name: switch to them without the greeting. */
+  async function switchTwinQuietly(id: PersonaId | undefined): Promise<void> {
+    if (id === undefined || id === personaRef.current || personaSaving || currentRequestPending.current) return;
+    try {
+      const saved = await window.vyomara.setPersona(id);
+      personaRef.current = saved;
+      setPersonaState(saved);
+    } catch {
+      // Keep the current twin; the request still goes through.
+    }
+  }
+
   async function choosePersona(id: PersonaId): Promise<void> {
     if (id === persona || personaSaving || requestPending) return;
     setPersonaSaving(true);

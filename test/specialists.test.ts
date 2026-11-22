@@ -28,15 +28,19 @@ test('only the twins are personas; the specialists are the inner team', () => {
   assert.equal(personaFor(undefined).id, 'vyom');
 });
 
-test('the twin knows their twin and the user\'s character reaches the system prompt', () => {
-  const vyom = buildSystemPrompt(environment, [], { persona: 'vyom' });
-  assert.match(vyom, /You are Vyom, the male AI assistant/);
-  assert.match(vyom, /your twin Vyomara/);
-  const withCharacter = buildSystemPrompt(environment, [], { persona: 'vyomara', character: 'Call me boss. Short answers.' });
-  assert.match(withCharacter, /your twin Vyom\b/);
+test('the twin knows their twin and the user\'s character reaches the turn context', async () => {
+  const { buildTurnContext } = await import('../src/agent/system-prompt.ts');
+  const vyom = buildTurnContext(environment, { persona: 'vyom' });
+  assert.match(vyom, /You are Vyom \(male/);
+  assert.match(vyom, /Your twin is Vyomara/);
+  const withCharacter = buildTurnContext(environment, { persona: 'vyomara', character: 'Call me boss. Short answers.' });
+  assert.match(withCharacter, /Your twin is Vyom\b/);
   assert.match(withCharacter, /Your character, set by the user[\s\S]*Call me boss/);
   assert.doesNotMatch(vyom, /Your character, set by the user/);
-  assert.doesNotMatch(vyom, /inner team/, 'no team guidance without the delegate tool');
+  const system = buildSystemPrompt(environment, [], { persona: 'vyom', character: 'Call me boss.' });
+  assert.match(system, /Vyom \(male\) and Vyomara \(female\)/);
+  assert.doesNotMatch(system, /Call me boss/, 'the character stays out of the cached system prompt');
+  assert.doesNotMatch(system, /inner team/, 'no team guidance without the delegate tool');
   const withTeam = buildSystemPrompt(environment, [{ id: 'delegate', description: 'd', parameters: { type: 'object', properties: {}, additionalProperties: false } }], { persona: 'vyom' });
   assert.match(withTeam, /inner team[\s\S]*Khoj \(khoj\)[\s\S]*Lipi \(lipi\)/);
 });

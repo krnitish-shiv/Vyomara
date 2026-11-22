@@ -1377,8 +1377,7 @@ ipcMain.handle('vyomara:persona-set', async (event, input: unknown) => {
   persona = input;
   if (pipWindow && !pipWindow.isDestroyed()) pipWindow.setTitle(personaFor(persona).name);
   await saveAssistantState();
-  // The assistant's name is in the system prompt: read the new one ahead of time.
-  warmUpModel(config);
+  // Both twins share one cached system prompt (who speaks is in each turn's context): no re-priming.
   return persona;
 });
 
@@ -1400,8 +1399,7 @@ ipcMain.handle('vyomara:character-set', async (event, input: unknown) => {
   if (clean === undefined) delete characters[record.persona];
   else characters[record.persona] = clean;
   await saveAssistantState();
-  // The character is in the system prompt: re-read it ahead of time.
-  if (record.persona === persona) warmUpModel(config);
+  // The character travels in each turn's context, so the cached system prompt stays valid.
   return { ...characters };
 });
 

@@ -725,7 +725,12 @@ async function prepareTurn(
     .filter(message => message.role === 'user')
     .slice(-INSTRUCTIONS_RECENT_TURNS)
     .some(message => message.role === 'user' && carriesProjectInstructions(message.context, project));
-  const context = buildTurnContext(environment, { includeInstructions, readOnly: forbidsChanges(prompt) });
+  const context = buildTurnContext(environment, {
+    includeInstructions,
+    readOnly: forbidsChanges(prompt),
+    ...(options.persona ? { persona: options.persona } : {}),
+    ...(options.character ? { character: options.character } : {}),
+  });
   return { toolCapable, modelTools, system, context };
 }
 
