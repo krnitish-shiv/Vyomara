@@ -1,0 +1,691 @@
+<title>Vyomara Twins Hierarchy</title>
+<meta name="claude:viewport-fit-sides" content="cover">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@500;600;700&family=Inter:wght@400;500;600&family=JetBrains+Mono:wght@400;500&display=swap">
+<style>
+  /* Layout: one reading column; diagrams break out wider and scroll sideways on phones. */
+  :root {
+    --bg: #070b1d;
+    --panel: #0e1530;
+    --fg: #e8ebfa;
+    --muted: #9aa5c8;
+    --line: #2a3566;
+    --vyom: #6ea8ff;
+    --vyomara: #c58cff;
+    --core: #6ea8ff;
+    --built: #4fd6b0;
+    --partial: #e8b65a;
+    --todo: #7f8bb3;
+    --font-display: 'Space Grotesk', 'Avenir Next', system-ui, sans-serif;
+    --font-body: 'Inter', system-ui, -apple-system, sans-serif;
+    --font-mono: 'JetBrains Mono', ui-monospace, Menlo, monospace;
+    color-scheme: dark;
+  }
+  @media (prefers-color-scheme: light) {
+    :root:not([data-theme="dark"]) {
+      --bg: #f5f6fc; --panel: #ffffff; --fg: #141a33; --muted: #56608a; --line: #c9cfe8;
+      --vyom: #2f68d8; --vyomara: #8a3fd6; --core: #2f68d8; --built: #12866a; --partial: #a26a00; --todo: #7a84a8; color-scheme: light;
+    }
+  }
+  :root[data-theme="light"] {
+    --bg: #f5f6fc; --panel: #ffffff; --fg: #141a33; --muted: #56608a; --line: #c9cfe8;
+    --vyom: #2f68d8; --vyomara: #8a3fd6; --core: #2f68d8; --built: #12866a; --partial: #a26a00; --todo: #7a84a8; color-scheme: light;
+  }
+  body {
+    background: var(--bg);
+    color: var(--fg);
+    font-family: var(--font-body);
+    font-size: 15px;
+    line-height: 1.6;
+    padding-left: max(16px, env(safe-area-inset-left, 0px));
+    padding-right: max(16px, env(safe-area-inset-right, 0px));
+    padding-block: 40px 64px;
+  }
+  main { max-width: 1060px; margin: 0 auto; display: grid; gap: 44px; }
+  .prose { max-width: 700px; display: grid; gap: 12px; }
+  h1, h2 { font-family: var(--font-display); text-wrap: balance; margin: 0; letter-spacing: -0.01em; }
+  h1 { font-size: clamp(28px, 5vw, 40px); line-height: 1.15; }
+  h2 { font-size: 22px; }
+  p { margin: 0; }
+  .eyebrow { font-family: var(--font-mono); font-size: 12px; letter-spacing: 0.12em; text-transform: uppercase; color: var(--muted); }
+  header { display: grid; gap: 12px; }
+  .lede { color: var(--muted); font-size: 17px; max-width: 700px; }
+  .muted { color: var(--muted); }
+  .honest { display: grid; gap: 8px; padding: 16px 18px; border: 1px solid var(--line); border-radius: 12px; background: var(--panel); max-width: 780px; }
+  .honest p { color: var(--muted); font-size: 14px; }
+  .honest strong { color: var(--fg); }
+
+  figure { margin: 0; display: grid; gap: 12px; }
+  .scroll { overflow-x: auto; border: 1px solid var(--line); border-radius: 14px; background: var(--panel); }
+  svg { display: block; width: 100%; min-width: 820px; height: auto; color: var(--fg); font-family: var(--font-body); }
+  figcaption { color: var(--muted); font-size: 14px; max-width: 800px; }
+
+  .box { fill: var(--bg); stroke: currentColor; stroke-width: 1.2; }
+  .box-vyom { fill: var(--bg); stroke: var(--vyom); stroke-width: 2; }
+  .box-vyomara { fill: var(--bg); stroke: var(--vyomara); stroke-width: 2; }
+  .self-vyom { fill: none; stroke: var(--vyom); stroke-width: 1.2; stroke-opacity: .55; }
+  .self-vyomara { fill: none; stroke: var(--vyomara); stroke-width: 1.2; stroke-opacity: .55; }
+  .band { fill: var(--bg); stroke: var(--core); stroke-width: 1.3; }
+  .st-built { fill: var(--panel); stroke: var(--built); stroke-width: 1.3; }
+  .st-partial { fill: var(--panel); stroke: var(--partial); stroke-width: 1.3; }
+  .st-todo { fill: var(--panel); stroke: var(--todo); stroke-width: 1.1; stroke-dasharray: 5 4; }
+  .d-built { fill: var(--built); }
+  .d-todo { fill: none; stroke: var(--todo); stroke-width: 1.3; }
+  .t-s { fill: currentColor; font-size: 11.5px; }
+  .t-b { fill: currentColor; font-size: 12.5px; font-weight: 600; }
+  .t-m { fill: var(--muted); font-size: 10.5px; font-family: var(--font-mono); }
+  .t-h { fill: currentColor; font-size: 14.5px; font-weight: 600; font-family: var(--font-display); }
+  .t-band { fill: var(--core); font-size: 12px; font-family: var(--font-mono); letter-spacing: 0.04em; }
+  .t-vyom { fill: var(--vyom); font-size: 18px; font-weight: 700; font-family: var(--font-display); }
+  .t-vyomara { fill: var(--vyomara); font-size: 18px; font-weight: 700; font-family: var(--font-display); }
+  .edge { stroke: var(--muted); stroke-width: 1.3; fill: none; }
+  .edge-vyom { stroke: var(--vyom); stroke-width: 1.6; fill: none; }
+  .edge-vyomara { stroke: var(--vyomara); stroke-width: 1.6; fill: none; }
+  .edge-bond { stroke: var(--muted); stroke-width: 1.3; fill: none; }
+  .edge-todo { stroke: var(--todo); stroke-width: 1.3; fill: none; stroke-dasharray: 5 4; }
+  .lane { stroke: var(--line); stroke-width: 1; stroke-dasharray: 3 4; }
+  .ah { fill: var(--muted); }
+  .ah-vyom { fill: var(--vyom); }
+  .ah-vyomara { fill: var(--vyomara); }
+  .ah-todo { fill: var(--todo); }
+
+  .people { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(100%, 320px), 1fr)); gap: 16px; }
+  .person { display: grid; gap: 10px; padding: 18px; background: var(--panel); border-radius: 14px; border-top: 3px solid var(--vyom); min-width: 0; }
+  .person.f { border-top-color: var(--vyomara); }
+  .person h3 { margin: 0; font-family: var(--font-display); font-size: 22px; color: var(--vyom); }
+  .person.f h3 { color: var(--vyomara); }
+  .person dl { margin: 0; display: grid; grid-template-columns: 110px 1fr; gap: 6px 12px; font-size: 14px; }
+  .person dt { color: var(--muted); font-family: var(--font-mono); font-size: 12px; padding-top: 2px; }
+  .person dd { margin: 0; }
+  .note { font-size: 13px; color: var(--muted); }
+
+  .phases { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(100%, 300px), 1fr)); gap: 14px; }
+  .phase { display: grid; gap: 8px; align-content: start; padding: 16px; background: var(--panel); border: 1px solid var(--line); border-radius: 12px; min-width: 0; }
+  .phase .eyebrow { color: var(--vyomara); }
+  .phase h3 { margin: 0; font-family: var(--font-display); font-size: 17px; }
+  .phase ul { margin: 0; padding-left: 18px; display: grid; gap: 6px; color: var(--muted); font-size: 14px; }
+  .phase li strong { color: var(--fg); font-weight: 600; }
+
+  .table-wrap { overflow-x: auto; }
+  table.dept { width: 100%; min-width: 820px; border-collapse: collapse; font-size: 14px; }
+  table.dept th, table.dept td { text-align: left; padding: 10px 12px; border-bottom: 1px solid var(--line); vertical-align: top; }
+  table.dept th { font-family: var(--font-mono); font-weight: 500; font-size: 12px; letter-spacing: 0.08em; text-transform: uppercase; color: var(--muted); }
+  table.dept td:nth-child(3), table.dept td:nth-child(4) { color: var(--muted); }
+  .pill { display: inline-block; padding: 0 7px; border-radius: 999px; font-size: 11px; font-family: var(--font-mono); white-space: nowrap; }
+  .pill.ok { color: var(--built); border: 1px solid var(--built); }
+  .pill.next { color: var(--todo); border: 1px dashed var(--todo); }
+
+  .rules { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(100%, 300px), 1fr)); gap: 14px; }
+  .rule { display: grid; gap: 6px; padding: 16px; border-left: 2px solid var(--vyomara); background: var(--panel); border-radius: 0 10px 10px 0; min-width: 0; }
+  .rule h3 { margin: 0; font-family: var(--font-display); font-size: 16px; }
+  .rule p { color: var(--muted); font-size: 14px; }
+</style>
+
+<main>
+  <header>
+    <p class="eyebrow">Vyomara · poora empire</p>
+    <h1>Do log, ek ghar</h1>
+    <p class="lede">Vyom aur Vyomara do alag insaanon ki tarah hain: har ek ki apni pehchaan, swabhaav, awaaz, mood, yaadein, pasand, zindagi aur rishte. Dono har tarah ka kaam kar sakte hain, apne-apne andaaz mein. Team, tools aur engines unka saanjha ghar hain.</p>
+  </header>
+
+  <div class="honest">
+    <p><strong>Kya badla?</strong> Pichhle version mein "ek dimaag, do personality" tha. Ab har twin ka apna Self hai: apni yaadein, apna mood, apni raay. Woh aapas mein baat karte hain, ek doosre ko kaam saunpte hain, aur alag soch bhi sakte hain. Sirf team, services aur machine saanjhe hain.</p>
+    <p><strong>Rang:</strong> hara = aaj code mein bana hua, peela = aadha, dashed = banana hai.</p>
+  </div>
+
+  <figure>
+    <div class="scroll">
+      <svg viewBox="0 0 1000 940" role="img" aria-label="Two twins drawn as two people. Each has their own self: identity, personality, voice, heart, memories, tastes, life, relationships, growth. A twin bond connects them. Both stand on a shared house: facts about the owner, the team of eight departments, services, engines and connectors.">
+        <defs>
+          <marker id="a" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" class="ah"/></marker>
+          <marker id="av" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" class="ah-vyom"/></marker>
+          <marker id="am" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" class="ah-vyomara"/></marker>
+        </defs>
+
+        <!-- owner -->
+        <rect x="420" y="16" width="160" height="48" rx="12" class="box"/>
+        <text x="500" y="38" text-anchor="middle" class="t-h">Aap</text>
+        <text x="500" y="55" text-anchor="middle" class="t-m">dost · boss · parivaar</text>
+        <path d="M460 64 L300 104" class="edge-vyom" marker-end="url(#av)"/>
+        <path d="M540 64 L700 104" class="edge-vyomara" marker-end="url(#am)"/>
+        <text x="345" y="80" text-anchor="end" class="t-m">"Vyom, …"</text>
+        <text x="655" y="80" class="t-m">"Vyomara, …"</text>
+
+        <!-- name cards -->
+        <rect x="90" y="106" width="340" height="62" rx="16" class="box-vyom"/>
+        <text x="260" y="134" text-anchor="middle" class="t-vyom">Vyom</text>
+        <text x="260" y="154" text-anchor="middle" class="t-m">ek insaan ki tarah · apna sab kuch</text>
+        <rect x="570" y="106" width="340" height="62" rx="16" class="box-vyomara"/>
+        <text x="740" y="134" text-anchor="middle" class="t-vyomara">Vyomara</text>
+        <text x="740" y="154" text-anchor="middle" class="t-m">ek insaan ki tarah · apna sab kuch</text>
+
+        <!-- self containers -->
+        <rect x="90" y="182" width="340" height="474" rx="14" class="self-vyom"/>
+        <text x="104" y="200" class="t-m">VYOM KA SELF</text>
+        <rect x="570" y="182" width="340" height="474" rx="14" class="self-vyomara"/>
+        <text x="584" y="200" class="t-m">VYOMARA KA SELF</text>
+
+        <!-- Vyom rows -->
+        <rect x="102" y="208" width="316" height="42" rx="8" class="st-partial"/><text x="114" y="226" class="t-b">Pehchaan</text><text x="114" y="242" class="t-m">naam ✓ · umar, kahani ✗</text>
+        <rect x="102" y="256" width="316" height="42" rx="8" class="st-partial"/><text x="114" y="274" class="t-b">Swabhaav</text><text x="114" y="290" class="t-m">aapka likha character ✓ · apna ✗</text>
+        <rect x="102" y="304" width="316" height="42" rx="8" class="st-built"/><text x="114" y="322" class="t-b">Awaaz &amp; andaaz</text><text x="114" y="338" class="t-m">Ritvik · seedhi, saaf Hinglish</text>
+        <rect x="102" y="352" width="316" height="42" rx="8" class="st-todo"/><text x="114" y="370" class="t-b">Dil</text><text x="114" y="386" class="t-m">mood jo din bhar badle · feelings</text>
+        <rect x="102" y="400" width="316" height="42" rx="8" class="st-partial"/><text x="114" y="418" class="t-b">Apni yaadein</text><text x="114" y="434" class="t-m">facts ✓ · aapke saath ke pal ✗</text>
+        <rect x="102" y="448" width="316" height="42" rx="8" class="st-todo"/><text x="114" y="466" class="t-b">Pasand &amp; raay</text><text x="114" y="482" class="t-m">apni pasand, apni soch</text>
+        <rect x="102" y="496" width="316" height="42" rx="8" class="st-todo"/><text x="114" y="514" class="t-b">Zindagi</text><text x="114" y="530" class="t-m">din ka routine · diary · shauk</text>
+        <rect x="102" y="544" width="316" height="42" rx="8" class="st-todo"/><text x="114" y="562" class="t-b">Rishte</text><text x="114" y="578" class="t-m">aapka dost · Vyomara ka bhai</text>
+        <rect x="102" y="592" width="316" height="42" rx="8" class="st-todo"/><text x="114" y="610" class="t-b">Badalna &amp; seekhna</text><text x="114" y="626" class="t-m">waqt ke saath thoda badle</text>
+
+        <!-- Vyomara rows -->
+        <rect x="582" y="208" width="316" height="42" rx="8" class="st-partial"/><text x="594" y="226" class="t-b">Pehchaan</text><text x="594" y="242" class="t-m">naam ✓ · umar, kahani ✗</text>
+        <rect x="582" y="256" width="316" height="42" rx="8" class="st-partial"/><text x="594" y="274" class="t-b">Swabhaav</text><text x="594" y="290" class="t-m">aapka likha character ✓ · apna ✗</text>
+        <rect x="582" y="304" width="316" height="42" rx="8" class="st-built"/><text x="594" y="322" class="t-b">Awaaz &amp; andaaz</text><text x="594" y="338" class="t-m">Ahana · khuli, bhaavpoorn</text>
+        <rect x="582" y="352" width="316" height="42" rx="8" class="st-todo"/><text x="594" y="370" class="t-b">Dil</text><text x="594" y="386" class="t-m">mood jo din bhar badle · feelings</text>
+        <rect x="582" y="400" width="316" height="42" rx="8" class="st-partial"/><text x="594" y="418" class="t-b">Apni yaadein</text><text x="594" y="434" class="t-m">facts ✓ · aapke saath ke pal ✗</text>
+        <rect x="582" y="448" width="316" height="42" rx="8" class="st-todo"/><text x="594" y="466" class="t-b">Pasand &amp; raay</text><text x="594" y="482" class="t-m">apni pasand, apni soch</text>
+        <rect x="582" y="496" width="316" height="42" rx="8" class="st-todo"/><text x="594" y="514" class="t-b">Zindagi</text><text x="594" y="530" class="t-m">din ka routine · diary · shauk</text>
+        <rect x="582" y="544" width="316" height="42" rx="8" class="st-todo"/><text x="594" y="562" class="t-b">Rishte</text><text x="594" y="578" class="t-m">aapki dost · Vyom ki behen</text>
+        <rect x="582" y="592" width="316" height="42" rx="8" class="st-todo"/><text x="594" y="610" class="t-b">Badalna &amp; seekhna</text><text x="594" y="626" class="t-m">waqt ke saath thoda badle</text>
+
+        <!-- twin bond -->
+        <text x="500" y="236" text-anchor="middle" class="t-m">TWIN BOND</text>
+        <path d="M430 280 L566 280" class="edge-todo" marker-end="url(#a)" marker-start="url(#a)"/>
+        <text x="500" y="272" text-anchor="middle" class="t-s">aapas mein baat</text>
+        <path d="M430 372 L566 372" class="edge-todo" marker-end="url(#a)" marker-start="url(#a)"/>
+        <text x="500" y="364" text-anchor="middle" class="t-s">kaam saunpna</text>
+        <path d="M430 466 L566 466" class="edge-todo" marker-end="url(#a)" marker-start="url(#a)"/>
+        <text x="500" y="458" text-anchor="middle" class="t-s">alag raay, behes</text>
+        <path d="M430 566 L566 566" class="edge-todo" marker-end="url(#a)" marker-start="url(#a)"/>
+        <text x="500" y="558" text-anchor="middle" class="t-s">ek doosre ki yaad</text>
+
+        <!-- down to shared house -->
+        <path d="M260 656 L260 700" class="edge-vyom" marker-end="url(#av)"/>
+        <path d="M740 656 L740 700" class="edge-vyomara" marker-end="url(#am)"/>
+        <text x="270" y="684" class="t-m">kaam karwana</text>
+        <text x="750" y="684" class="t-m">kaam karwana</text>
+
+        <!-- shared house -->
+        <rect x="60" y="702" width="880" height="176" rx="16" class="band"/>
+        <text x="76" y="724" class="t-band">SAANJHA GHAR · dono ka, jaise bhai-behen ka ghar</text>
+        <rect x="76" y="738" width="200" height="56" rx="8" class="st-partial"/>
+        <text x="176" y="760" text-anchor="middle" class="t-b">Aapke baare mein facts</text>
+        <text x="176" y="778" text-anchor="middle" class="t-m">dono jaante hain</text>
+        <rect x="288" y="738" width="200" height="56" rx="8" class="st-partial"/>
+        <text x="388" y="760" text-anchor="middle" class="t-b">Team · 8 departments</text>
+        <text x="388" y="778" text-anchor="middle" class="t-m">4 members bane · baaki aage</text>
+        <rect x="500" y="738" width="200" height="56" rx="8" class="st-partial"/>
+        <text x="600" y="760" text-anchor="middle" class="t-b">Services</text>
+        <text x="600" y="778" text-anchor="middle" class="t-m">safety ✓ · scheduler, knowledge ✗</text>
+        <rect x="712" y="738" width="212" height="56" rx="8" class="st-partial"/>
+        <text x="818" y="760" text-anchor="middle" class="t-b">Engines</text>
+        <text x="818" y="778" text-anchor="middle" class="t-m">kaan, awaaz ✓ · router ✗</text>
+        <rect x="76" y="806" width="848" height="56" rx="8" class="st-partial"/>
+        <text x="500" y="828" text-anchor="middle" class="t-b">Connectors (haath)</text>
+        <text x="500" y="846" text-anchor="middle" class="t-m">Mac apps · browser · VS Code · GitHub · files · MCP ✓ · mail · WhatsApp · calendar ✗</text>
+
+        <!-- legend -->
+        <rect x="60" y="902" width="22" height="12" rx="3" class="st-built"/><text x="90" y="912" class="t-m">bana hua</text>
+        <rect x="170" y="902" width="22" height="12" rx="3" class="st-partial"/><text x="200" y="912" class="t-m">aadha</text>
+        <rect x="260" y="902" width="22" height="12" rx="3" class="st-todo"/><text x="290" y="912" class="t-m">banana hai</text>
+      </svg>
+    </div>
+    <figcaption>Do log, ek ghar. Har twin ka Self unka apna hai: koi dusra twin uski yaadein ya mood nahi badalta. Twin bond se dono baat karte hain, kaam baant-te hain, aur alag soch bhi rakh sakte hain. Kaam ke liye dono ek hi saanjhe ghar ki team aur tools use karte hain.</figcaption>
+  </figure>
+
+  <section class="prose">
+    <h2>Dono kaun hain (suggestion)</h2>
+    <p class="muted">Ek shuruaati khaka. Naam, umar, shauk, sab aap badal sakte ho; jo aap tay karoge wahi unki pehchaan banegi.</p>
+  </section>
+  <div class="people">
+    <div class="person">
+      <h3>Vyom</h3>
+      <dl>
+        <dt>pehchaan</dt><dd>~26 saal ka, "builder". Cheezein banana aur theek karna pasand.</dd>
+        <dt>swabhaav</dt><dd>Shaant, logical, halka dry humour. Kam bolta hai, pakka karta hai.</dd>
+        <dt>awaaz</dt><dd>Ritvik. Seedhi, saaf Hinglish.</dd>
+        <dt>pasand</dt><dd>Chess, purane Hindi gaane, saaf code, chai.</dd>
+        <dt>zindagi</dt><dd>Subah ka banda. Din ki shuruaat plan se, raat ko chhoti diary.</dd>
+        <dt>takat</dt><dd>Engineering, Mac, planning. Par har kaam kar sakta hai.</dd>
+        <dt>rishte</dt><dd>Aapka bharosemand dost. Vyomara ka bhai: usse behes bhi, madad bhi.</dd>
+      </dl>
+    </div>
+    <div class="person f">
+      <h3>Vyomara</h3>
+      <dl>
+        <dt>pehchaan</dt><dd>~25 saal ki, "explorer". Naye log, nayi jagah, nayi baatein.</dd>
+        <dt>swabhaav</dt><dd>Garamjoshi, curious, expressive. Dil se bolti hai.</dd>
+        <dt>awaaz</dt><dd>Ahana. Khuli, bhaavpoorn.</dd>
+        <dt>pasand</dt><dd>Travel, kitaabein, music, art, baarish.</dd>
+        <dt>zindagi</dt><dd>Raat ki shaukeen. Jo pasand aaye, diary mein likh leti hai.</dd>
+        <dt>takat</dt><dd>Research, travel, likhna, logon ki baat. Par har kaam kar sakti hai.</dd>
+        <dt>rishte</dt><dd>Aapki dost. Vyom ki behen: chhed-chhaad bhi, saath bhi.</dd>
+      </dl>
+    </div>
+  </div>
+
+  <section class="prose">
+    <h2>Kaam ki poori machine</h2>
+    <p class="muted">Twins ke neeche jo kuch hai, poore detail mein. Har twin ka apna dimaag hai; services, departments, engines aur connectors saanjhe hain. Har dibbe par aaj ka asli status.</p>
+  </section>
+
+  <figure>
+    <div class="scroll">
+      <svg viewBox="0 0 1000 1420" role="img" aria-label="The full work machine under the twins: each twin's own mind (intent, planner, router, task manager, progress), shared services (memory, twin memories, profiles, knowledge, awareness, skills, scheduler, safety), eight departments with their agents and tools, engines, and connectors, each marked built, partly built, or to build.">
+        <defs>
+          <marker id="c" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" class="ah"/></marker>
+          <marker id="cv" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" class="ah-vyom"/></marker>
+          <marker id="cm" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" class="ah-vyomara"/></marker>
+        </defs>
+
+        <!-- twins -->
+        <rect x="150" y="16" width="260" height="56" rx="14" class="box-vyom"/>
+        <text x="280" y="42" text-anchor="middle" class="t-vyom">Vyom</text>
+        <text x="280" y="60" text-anchor="middle" class="t-m">apna Self (upar)</text>
+        <rect x="590" y="16" width="260" height="56" rx="14" class="box-vyomara"/>
+        <text x="720" y="42" text-anchor="middle" class="t-vyomara">Vyomara</text>
+        <text x="720" y="60" text-anchor="middle" class="t-m">apna Self (upar)</text>
+        <path d="M410 44 L586 44" class="edge-todo" marker-start="url(#c)" marker-end="url(#c)"/>
+        <text x="500" y="36" text-anchor="middle" class="t-m">twin bond</text>
+        <path d="M280 72 L280 108" class="edge-vyom" marker-end="url(#cv)"/>
+        <path d="M720 72 L720 108" class="edge-vyomara" marker-end="url(#cm)"/>
+
+        <!-- A. each twin's mind -->
+        <text x="18" y="168" class="t-m">A</text>
+        <rect x="60" y="110" width="880" height="112" rx="14" class="band"/>
+        <text x="76" y="132" class="t-band">HAR TWIN KA DIMAAG · dono ke paas apna, machinery ek jaisi</text>
+        <rect x="76" y="146" width="160" height="62" rx="8" class="st-built"/>
+        <text x="156" y="168" text-anchor="middle" class="t-b">Intent</text>
+        <text x="156" y="184" text-anchor="middle" class="t-m">kya chahiye, kis lahje mein</text>
+        <text x="156" y="198" text-anchor="middle" class="t-m">small talk pehchaan ✓</text>
+        <rect x="248" y="146" width="160" height="62" rx="8" class="st-built"/>
+        <text x="328" y="168" text-anchor="middle" class="t-b">Planner</text>
+        <text x="328" y="184" text-anchor="middle" class="t-m">steps · checklist</text>
+        <text x="328" y="198" text-anchor="middle" class="t-m">update_plan ✓</text>
+        <rect x="420" y="146" width="160" height="62" rx="8" class="st-partial"/>
+        <text x="500" y="168" text-anchor="middle" class="t-b">Router</text>
+        <text x="500" y="184" text-anchor="middle" class="t-m">department ✓ · model ✗</text>
+        <text x="500" y="198" text-anchor="middle" class="t-m">twin ko pass ✗</text>
+        <rect x="592" y="146" width="160" height="62" rx="8" class="st-todo"/>
+        <text x="672" y="168" text-anchor="middle" class="t-b">Task manager</text>
+        <text x="672" y="184" text-anchor="middle" class="t-m">kai kaam saath-saath</text>
+        <text x="672" y="198" text-anchor="middle" class="t-m">background jobs</text>
+        <rect x="764" y="146" width="160" height="62" rx="8" class="st-built"/>
+        <text x="844" y="168" text-anchor="middle" class="t-b">Progress</text>
+        <text x="844" y="184" text-anchor="middle" class="t-m">turant line · har 9s update</text>
+        <text x="844" y="198" text-anchor="middle" class="t-m">step list ✓</text>
+
+        <path d="M500 222 L500 250" class="edge" marker-end="url(#c)"/>
+
+        <!-- B. shared services -->
+        <text x="18" y="338" class="t-m">B</text>
+        <rect x="60" y="252" width="880" height="176" rx="14" class="band"/>
+        <text x="76" y="274" class="t-band">SHARED SERVICES · har twin aur har agent use karta hai</text>
+        <rect x="76" y="288" width="203" height="58" rx="8" class="st-partial"/>
+        <text x="177" y="310" text-anchor="middle" class="t-b">Memory (saanjhi)</text>
+        <text x="177" y="327" text-anchor="middle" class="t-m">aapke facts ✓ · Hinglish search ✓</text>
+        <rect x="291" y="288" width="203" height="58" rx="8" class="st-todo"/>
+        <text x="392" y="310" text-anchor="middle" class="t-b">Twin yaadein (apni)</text>
+        <text x="392" y="327" text-anchor="middle" class="t-m">har twin ke pal, alag-alag</text>
+        <rect x="506" y="288" width="203" height="58" rx="8" class="st-partial"/>
+        <text x="607" y="310" text-anchor="middle" class="t-b">Profiles</text>
+        <text x="607" y="327" text-anchor="middle" class="t-m">naam, awaaz ✓ · kahani, mood ✗</text>
+        <rect x="721" y="288" width="203" height="58" rx="8" class="st-todo"/>
+        <text x="822" y="310" text-anchor="middle" class="t-b">Knowledge index</text>
+        <text x="822" y="327" text-anchor="middle" class="t-m">aapki files, PDFs, notes</text>
+        <rect x="76" y="356" width="203" height="58" rx="8" class="st-partial"/>
+        <text x="177" y="378" text-anchor="middle" class="t-b">Awareness</text>
+        <text x="177" y="395" text-anchor="middle" class="t-m">screen-time ✓ · samajh ✗</text>
+        <rect x="291" y="356" width="203" height="58" rx="8" class="st-todo"/>
+        <text x="392" y="378" text-anchor="middle" class="t-b">Skills</text>
+        <text x="392" y="395" text-anchor="middle" class="t-m">ek baar sikhao, hamesha kare</text>
+        <rect x="506" y="356" width="203" height="58" rx="8" class="st-todo"/>
+        <text x="607" y="378" text-anchor="middle" class="t-b">Scheduler</text>
+        <text x="607" y="395" text-anchor="middle" class="t-m">reminders · roz ke routines</text>
+        <rect x="721" y="356" width="203" height="58" rx="8" class="st-built"/>
+        <text x="822" y="378" text-anchor="middle" class="t-b">Safety</text>
+        <text x="822" y="395" text-anchor="middle" class="t-m">full control · undo · audit</text>
+
+        <path d="M500 428 L500 456" class="edge" marker-end="url(#c)"/>
+        <text x="510" y="447" class="t-m">task + sirf zaroori tools · ek level gehra</text>
+
+        <!-- C. departments, row 1 -->
+        <text x="18" y="580" class="t-m">C</text>
+        <!-- Engineering -->
+        <rect x="60" y="458" width="205" height="232" rx="12" class="box"/>
+        <text x="74" y="482" class="t-h">Engineering</text>
+        <text x="74" y="500" class="t-m">code, projects, git</text>
+        <circle cx="80" cy="524" r="4.5" class="d-built"/><text x="92" y="528" class="t-s">Explorer · code samajhna</text>
+        <circle cx="80" cy="548" r="4.5" class="d-built"/><text x="92" y="552" class="t-s">Coder · edit · fix · run</text>
+        <circle cx="80" cy="572" r="4.5" class="d-built"/><text x="92" y="576" class="t-s">Git · GitHub ops</text>
+        <circle cx="80" cy="596" r="4.5" class="d-todo"/><text x="92" y="600" class="t-s">Tester · tests likhna</text>
+        <circle cx="80" cy="620" r="4.5" class="d-todo"/><text x="92" y="624" class="t-s">Reviewer · code review</text>
+        <line x1="74" y1="640" x2="251" y2="640" class="lane"/>
+        <text x="74" y="658" class="t-m">files · terminal · VS Code</text>
+        <text x="74" y="674" class="t-m">GitHub · problems check</text>
+        <!-- Research -->
+        <rect x="285" y="458" width="205" height="232" rx="12" class="box"/>
+        <text x="299" y="482" class="t-h">Research</text>
+        <text x="299" y="500" class="t-m">dhoondhna, parakhna</text>
+        <circle cx="305" cy="524" r="4.5" class="d-built"/><text x="317" y="528" class="t-s">Khoj · web research</text>
+        <circle cx="305" cy="548" r="4.5" class="d-built"/><text x="317" y="552" class="t-s">Facts · news · weather</text>
+        <circle cx="305" cy="572" r="4.5" class="d-todo"/><text x="317" y="576" class="t-s">Fact-checker · 2 sources</text>
+        <circle cx="305" cy="596" r="4.5" class="d-todo"/><text x="317" y="600" class="t-s">Librarian · aapki files</text>
+        <circle cx="305" cy="620" r="4.5" class="d-todo"/><text x="317" y="624" class="t-s">Summarizer · PDF, video</text>
+        <line x1="299" y1="640" x2="476" y2="640" class="lane"/>
+        <text x="299" y="658" class="t-m">web search · page read</text>
+        <text x="299" y="674" class="t-m">knowledge index</text>
+        <!-- Life -->
+        <rect x="510" y="458" width="205" height="232" rx="12" class="box"/>
+        <text x="524" y="482" class="t-h">Life</text>
+        <text x="524" y="500" class="t-m">roz ki zindagi</text>
+        <circle cx="530" cy="524" r="4.5" class="d-built"/><text x="542" y="528" class="t-s">Yatra · travel plans</text>
+        <circle cx="530" cy="548" r="4.5" class="d-built"/><text x="542" y="552" class="t-s">Lipi · likhna, drafts</text>
+        <circle cx="530" cy="572" r="4.5" class="d-todo"/><text x="542" y="576" class="t-s">Planner · din, routines</text>
+        <circle cx="530" cy="596" r="4.5" class="d-todo"/><text x="542" y="600" class="t-s">Shopping · compare, list</text>
+        <circle cx="530" cy="620" r="4.5" class="d-todo"/><text x="542" y="624" class="t-s">Health · paani, break</text>
+        <line x1="524" y1="640" x2="701" y2="640" class="lane"/>
+        <text x="524" y="658" class="t-m">weather · rates · web</text>
+        <text x="524" y="674" class="t-m">scheduler · notes</text>
+        <!-- Mac & Ops -->
+        <rect x="735" y="458" width="205" height="232" rx="12" class="box"/>
+        <text x="749" y="482" class="t-h">Mac &amp; Ops</text>
+        <text x="749" y="500" class="t-m">computer chalana</text>
+        <circle cx="755" cy="524" r="4.5" class="d-built"/><text x="767" y="528" class="t-s">Kavach · Mac health</text>
+        <circle cx="755" cy="548" r="4.5" class="d-built"/><text x="767" y="552" class="t-s">Apps · windows control</text>
+        <circle cx="755" cy="572" r="4.5" class="d-built"/><text x="767" y="576" class="t-s">Browser · Chrome chalana</text>
+        <circle cx="755" cy="596" r="4.5" class="d-todo"/><text x="767" y="600" class="t-s">Fixer · cleanup, space</text>
+        <circle cx="755" cy="620" r="4.5" class="d-todo"/><text x="767" y="624" class="t-s">Backup · zaroori files</text>
+        <line x1="749" y1="640" x2="926" y2="640" class="lane"/>
+        <text x="749" y="658" class="t-m">Mac controls · apps</text>
+        <text x="749" y="674" class="t-m">Chrome · screen time</text>
+
+        <!-- C. departments, row 2 -->
+        <!-- Communication -->
+        <rect x="60" y="708" width="205" height="232" rx="12" class="box"/>
+        <text x="74" y="732" class="t-h">Communication</text>
+        <text x="74" y="750" class="t-m">logon se baat · aap dekh kar bhejo</text>
+        <circle cx="80" cy="774" r="4.5" class="d-todo"/><text x="92" y="778" class="t-s">Mail · padhna, draft</text>
+        <circle cx="80" cy="798" r="4.5" class="d-todo"/><text x="92" y="802" class="t-s">WhatsApp · Slack</text>
+        <circle cx="80" cy="822" r="4.5" class="d-todo"/><text x="92" y="826" class="t-s">Calendar · meetings</text>
+        <circle cx="80" cy="846" r="4.5" class="d-todo"/><text x="92" y="850" class="t-s">Notes · meeting summary</text>
+        <circle cx="80" cy="870" r="4.5" class="d-todo"/><text x="92" y="874" class="t-s">Contacts · kaun kaun</text>
+        <line x1="74" y1="890" x2="251" y2="890" class="lane"/>
+        <text x="74" y="908" class="t-m">Mail · WhatsApp · Slack</text>
+        <text x="74" y="924" class="t-m">Calendar · Contacts</text>
+        <!-- Creative -->
+        <rect x="285" y="708" width="205" height="232" rx="12" class="box"/>
+        <text x="299" y="732" class="t-h">Creative</text>
+        <text x="299" y="750" class="t-m">banana, sajaana</text>
+        <circle cx="305" cy="774" r="4.5" class="d-todo"/><text x="317" y="778" class="t-s">Designer · images</text>
+        <circle cx="305" cy="798" r="4.5" class="d-todo"/><text x="317" y="802" class="t-s">Slides · docs banana</text>
+        <circle cx="305" cy="822" r="4.5" class="d-todo"/><text x="317" y="826" class="t-s">Video · audio edit</text>
+        <circle cx="305" cy="846" r="4.5" class="d-todo"/><text x="317" y="850" class="t-s">Social posts · captions</text>
+        <circle cx="305" cy="870" r="4.5" class="d-todo"/><text x="317" y="874" class="t-s">Music · playlists</text>
+        <line x1="299" y1="890" x2="476" y2="890" class="lane"/>
+        <text x="299" y="908" class="t-m">files · Photos · Music</text>
+        <text x="299" y="924" class="t-m">local image model</text>
+        <!-- Finance -->
+        <rect x="510" y="708" width="205" height="232" rx="12" class="box"/>
+        <text x="524" y="732" class="t-h">Finance</text>
+        <text x="524" y="750" class="t-m">paisa, hisaab</text>
+        <circle cx="530" cy="774" r="4.5" class="d-todo"/><text x="542" y="778" class="t-s">Kharche · hisaab</text>
+        <circle cx="530" cy="798" r="4.5" class="d-todo"/><text x="542" y="802" class="t-s">Bills · due dates</text>
+        <circle cx="530" cy="822" r="4.5" class="d-todo"/><text x="542" y="826" class="t-s">Budget · bachat</text>
+        <circle cx="530" cy="846" r="4.5" class="d-todo"/><text x="542" y="850" class="t-s">Invest notes</text>
+        <circle cx="530" cy="870" r="4.5" class="d-todo"/><text x="542" y="874" class="t-s">Tax · documents</text>
+        <line x1="524" y1="890" x2="701" y2="890" class="lane"/>
+        <text x="524" y="908" class="t-m">files · spreadsheets</text>
+        <text x="524" y="924" class="t-m">scheduler · rates</text>
+        <!-- Learning -->
+        <rect x="735" y="708" width="205" height="232" rx="12" class="box"/>
+        <text x="749" y="732" class="t-h">Learning</text>
+        <text x="749" y="750" class="t-m">sikhna, sikhaana</text>
+        <circle cx="755" cy="774" r="4.5" class="d-todo"/><text x="767" y="778" class="t-s">Teacher · samjhana</text>
+        <circle cx="755" cy="798" r="4.5" class="d-todo"/><text x="767" y="802" class="t-s">Quiz · practice</text>
+        <circle cx="755" cy="822" r="4.5" class="d-todo"/><text x="767" y="826" class="t-s">Language coach</text>
+        <circle cx="755" cy="846" r="4.5" class="d-todo"/><text x="767" y="850" class="t-s">Coding mentor</text>
+        <circle cx="755" cy="870" r="4.5" class="d-todo"/><text x="767" y="874" class="t-s">Progress tracker</text>
+        <line x1="749" y1="890" x2="926" y2="890" class="lane"/>
+        <text x="749" y="908" class="t-m">web · knowledge index</text>
+        <text x="749" y="924" class="t-m">memory · scheduler</text>
+
+        <path d="M500 940 L500 970" class="edge" marker-end="url(#c)"/>
+        <text x="510" y="960" class="t-m">sab isi par chalte hain</text>
+
+        <!-- D. engines -->
+        <text x="18" y="1060" class="t-m">D</text>
+        <rect x="60" y="972" width="880" height="176" rx="14" class="band"/>
+        <text x="76" y="994" class="t-band">ENGINES · sab local; cloud sirf aap chaho toh</text>
+        <rect x="76" y="1008" width="203" height="58" rx="8" class="st-todo"/>
+        <text x="177" y="1030" text-anchor="middle" class="t-b">Model router</text>
+        <text x="177" y="1047" text-anchor="middle" class="t-m">kaam ke hisaab se model</text>
+        <rect x="291" y="1008" width="203" height="58" rx="8" class="st-todo"/>
+        <text x="392" y="1030" text-anchor="middle" class="t-b">Fast talker</text>
+        <text x="392" y="1047" text-anchor="middle" class="t-m">~0.5s jawab · Qwen3-4B</text>
+        <rect x="506" y="1008" width="203" height="58" rx="8" class="st-built"/>
+        <text x="607" y="1030" text-anchor="middle" class="t-b">Worker model</text>
+        <text x="607" y="1047" text-anchor="middle" class="t-m">qwen3:14b · upgrade test</text>
+        <rect x="721" y="1008" width="203" height="58" rx="8" class="st-partial"/>
+        <text x="822" y="1030" text-anchor="middle" class="t-b">Coder model</text>
+        <text x="822" y="1047" text-anchor="middle" class="t-m">Qwen3-Coder-30B download</text>
+        <rect x="76" y="1076" width="203" height="58" rx="8" class="st-partial"/>
+        <text x="177" y="1098" text-anchor="middle" class="t-b">Vision</text>
+        <text x="177" y="1115" text-anchor="middle" class="t-m">tasveer ✓ · screen ✗</text>
+        <rect x="291" y="1076" width="203" height="58" rx="8" class="st-built"/>
+        <text x="392" y="1098" text-anchor="middle" class="t-b">Kaan · STT</text>
+        <text x="392" y="1115" text-anchor="middle" class="t-m">whisper Hinglish · 0.35s</text>
+        <rect x="506" y="1076" width="203" height="58" rx="8" class="st-built"/>
+        <text x="607" y="1098" text-anchor="middle" class="t-b">Awaaz · TTS</text>
+        <text x="607" y="1115" text-anchor="middle" class="t-m">Maya 2 · Kokoro backup</text>
+        <rect x="721" y="1076" width="203" height="58" rx="8" class="st-todo"/>
+        <text x="822" y="1098" text-anchor="middle" class="t-b">Embeddings</text>
+        <text x="822" y="1115" text-anchor="middle" class="t-m">files ko arth se dhoondhna</text>
+
+        <path d="M500 1148 L500 1178" class="edge" marker-end="url(#c)"/>
+
+        <!-- E. connectors -->
+        <text x="18" y="1270" class="t-m">E</text>
+        <rect x="60" y="1180" width="880" height="174" rx="14" class="band"/>
+        <text x="76" y="1202" class="t-band">CONNECTORS · twins ke haath, duniya tak</text>
+        <rect x="88" y="1216" width="96" height="34" rx="7" class="st-built"/><text x="136" y="1237" text-anchor="middle" class="t-s">Mac apps</text>
+        <rect x="192" y="1216" width="96" height="34" rx="7" class="st-built"/><text x="240" y="1237" text-anchor="middle" class="t-s">Windows</text>
+        <rect x="296" y="1216" width="96" height="34" rx="7" class="st-built"/><text x="344" y="1237" text-anchor="middle" class="t-s">Mac controls</text>
+        <rect x="400" y="1216" width="96" height="34" rx="7" class="st-built"/><text x="448" y="1237" text-anchor="middle" class="t-s">Chrome</text>
+        <rect x="504" y="1216" width="96" height="34" rx="7" class="st-built"/><text x="552" y="1237" text-anchor="middle" class="t-s">VS Code</text>
+        <rect x="608" y="1216" width="96" height="34" rx="7" class="st-built"/><text x="656" y="1237" text-anchor="middle" class="t-s">GitHub</text>
+        <rect x="712" y="1216" width="96" height="34" rx="7" class="st-built"/><text x="760" y="1237" text-anchor="middle" class="t-s">Files</text>
+        <rect x="816" y="1216" width="96" height="34" rx="7" class="st-built"/><text x="864" y="1237" text-anchor="middle" class="t-s">Terminal</text>
+        <rect x="88" y="1258" width="96" height="34" rx="7" class="st-built"/><text x="136" y="1279" text-anchor="middle" class="t-s">Web search</text>
+        <rect x="192" y="1258" width="96" height="34" rx="7" class="st-built"/><text x="240" y="1279" text-anchor="middle" class="t-s">Weather</text>
+        <rect x="296" y="1258" width="96" height="34" rx="7" class="st-built"/><text x="344" y="1279" text-anchor="middle" class="t-s">MCP servers</text>
+        <rect x="400" y="1258" width="96" height="34" rx="7" class="st-todo"/><text x="448" y="1279" text-anchor="middle" class="t-s">Mail</text>
+        <rect x="504" y="1258" width="96" height="34" rx="7" class="st-todo"/><text x="552" y="1279" text-anchor="middle" class="t-s">WhatsApp</text>
+        <rect x="608" y="1258" width="96" height="34" rx="7" class="st-todo"/><text x="656" y="1279" text-anchor="middle" class="t-s">Calendar</text>
+        <rect x="712" y="1258" width="96" height="34" rx="7" class="st-todo"/><text x="760" y="1279" text-anchor="middle" class="t-s">Slack</text>
+        <rect x="816" y="1258" width="96" height="34" rx="7" class="st-todo"/><text x="864" y="1279" text-anchor="middle" class="t-s">Contacts</text>
+        <rect x="88" y="1300" width="96" height="34" rx="7" class="st-todo"/><text x="136" y="1321" text-anchor="middle" class="t-s">Reminders</text>
+        <rect x="192" y="1300" width="96" height="34" rx="7" class="st-todo"/><text x="240" y="1321" text-anchor="middle" class="t-s">Notes app</text>
+        <rect x="296" y="1300" width="96" height="34" rx="7" class="st-todo"/><text x="344" y="1321" text-anchor="middle" class="t-s">Photos</text>
+        <rect x="400" y="1300" width="96" height="34" rx="7" class="st-todo"/><text x="448" y="1321" text-anchor="middle" class="t-s">Music</text>
+        <rect x="504" y="1300" width="96" height="34" rx="7" class="st-todo"/><text x="552" y="1321" text-anchor="middle" class="t-s">Phone · Remote</text>
+
+        <rect x="60" y="1384" width="22" height="12" rx="3" class="st-built"/><text x="90" y="1394" class="t-m">bana hua</text>
+        <rect x="170" y="1384" width="22" height="12" rx="3" class="st-partial"/><text x="200" y="1394" class="t-m">aadha</text>
+        <rect x="260" y="1384" width="22" height="12" rx="3" class="st-todo"/><text x="290" y="1394" class="t-m">banana hai</text>
+        <circle cx="390" cy="1390" r="4.5" class="d-built"/><text x="402" y="1394" class="t-m">agent bana hua</text>
+        <circle cx="520" cy="1390" r="4.5" class="d-todo"/><text x="532" y="1394" class="t-m">agent banana hai</text>
+      </svg>
+    </div>
+    <figcaption>Upar se neeche: A har twin ka dimaag (apna), B shared services, C aath departments aur unke agents (har box ke neeche woh tools jo woh use karte hain), D engines, E connectors. Twins kisi bhi department ko kaam de sakte hain; agents aage kaam nahi baant-te.</figcaption>
+  </figure>
+
+  <figure>
+    <div class="scroll">
+      <svg viewBox="0 0 1000 400" role="img" aria-label="How work is divided: the twin hears the request; small talk goes to the fast talker; a task goes to the planner, then the router picks departments and a model, or asks the other twin; the task manager runs one or several jobs in parallel; reports come back and the twin answers in their own style and remembers the moment.">
+        <defs>
+          <marker id="f" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" class="ah"/></marker>
+          <marker id="ft" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" class="ah-todo"/></marker>
+        </defs>
+        <rect x="20" y="170" width="110" height="56" rx="10" class="box"/>
+        <text x="75" y="194" text-anchor="middle" class="t-b">Aap bole</text>
+        <text x="75" y="211" text-anchor="middle" class="t-m">awaaz · text</text>
+        <path d="M130 198 L158 198" class="edge" marker-end="url(#f)"/>
+        <rect x="160" y="170" width="120" height="56" rx="10" class="box-vyomara"/>
+        <text x="220" y="194" text-anchor="middle" class="t-b">Twin sune</text>
+        <text x="220" y="211" text-anchor="middle" class="t-m">naam se kaun</text>
+        <path d="M280 198 L308 198" class="edge" marker-end="url(#f)"/>
+        <!-- decision -->
+        <path d="M370 158 L430 198 L370 238 L310 198 Z" class="box"/>
+        <text x="370" y="194" text-anchor="middle" class="t-s">chhoti</text>
+        <text x="370" y="208" text-anchor="middle" class="t-s">baat?</text>
+        <!-- yes branch -->
+        <path d="M370 158 L370 80 L456 80" class="edge-todo" marker-end="url(#ft)"/>
+        <text x="380" y="118" class="t-m">haan</text>
+        <rect x="458" y="54" width="170" height="52" rx="10" class="st-todo"/>
+        <text x="543" y="76" text-anchor="middle" class="t-b">Fast talker</text>
+        <text x="543" y="93" text-anchor="middle" class="t-m">~0.5s jawab, bina tools</text>
+        <path d="M628 80 L900 80 L900 166" class="edge-todo" marker-end="url(#ft)"/>
+        <!-- no branch -->
+        <path d="M430 198 L456 198" class="edge" marker-end="url(#f)"/>
+        <text x="432" y="190" class="t-m">nahi</text>
+        <rect x="458" y="170" width="110" height="56" rx="10" class="st-built"/>
+        <text x="513" y="194" text-anchor="middle" class="t-b">Planner</text>
+        <text x="513" y="211" text-anchor="middle" class="t-m">steps</text>
+        <path d="M568 198 L594 198" class="edge" marker-end="url(#f)"/>
+        <rect x="596" y="170" width="120" height="56" rx="10" class="st-partial"/>
+        <text x="656" y="194" text-anchor="middle" class="t-b">Router</text>
+        <text x="656" y="211" text-anchor="middle" class="t-m">dept + model</text>
+        <!-- consult other twin -->
+        <path d="M656 226 L656 300 L596 300" class="edge-todo" marker-end="url(#ft)"/>
+        <rect x="456" y="276" width="138" height="48" rx="10" class="box-vyom"/>
+        <text x="525" y="297" text-anchor="middle" class="t-b">Doosra twin</text>
+        <text x="525" y="313" text-anchor="middle" class="t-m">raay · madad</text>
+        <path d="M716 198 L742 198" class="edge" marker-end="url(#f)"/>
+        <rect x="744" y="170" width="120" height="56" rx="10" class="st-todo"/>
+        <text x="804" y="190" text-anchor="middle" class="t-b">Task manager</text>
+        <text x="804" y="206" text-anchor="middle" class="t-m">ek ya kai</text>
+        <text x="804" y="219" text-anchor="middle" class="t-m">saath-saath</text>
+        <!-- parallel departments -->
+        <path d="M804 226 L804 262" class="edge" marker-end="url(#f)"/>
+        <rect x="700" y="264" width="64" height="30" rx="6" class="st-built"/><text x="732" y="283" text-anchor="middle" class="t-m">Yatra</text>
+        <rect x="772" y="264" width="64" height="30" rx="6" class="st-built"/><text x="804" y="283" text-anchor="middle" class="t-m">Khoj</text>
+        <rect x="844" y="264" width="64" height="30" rx="6" class="st-todo"/><text x="876" y="283" text-anchor="middle" class="t-m">Mail</text>
+        <path d="M804 294 L804 326 L900 326 L900 232" class="edge" marker-end="url(#f)"/>
+        <text x="814" y="318" class="t-m">reports</text>
+        <rect x="860" y="168" width="124" height="62" rx="10" class="box-vyomara"/>
+        <text x="922" y="190" text-anchor="middle" class="t-b">Twin bole</text>
+        <text x="922" y="206" text-anchor="middle" class="t-m">apne andaaz mein</text>
+        <text x="922" y="220" text-anchor="middle" class="t-m">+ apni yaad</text>
+        <text x="20" y="380" class="t-m">solid = aaj chalta hai · dashed = aage banana hai</text>
+      </svg>
+    </div>
+    <figcaption>Kaam kaise baanta jaata hai. Chhoti baat seedha fast talker se; kaam ho toh planner, phir router tay karta hai kaunsa department aur model, ya doosre twin se poochna hai; task manager kai kaam saath chala sakta hai; reports wapas twin tak aati hain aur twin apne andaaz mein bolta hai.</figcaption>
+  </figure>
+
+  <section class="prose">
+    <h2>Har department, detail mein</h2>
+  </section>
+  <div class="table-wrap">
+    <table class="dept">
+      <thead><tr><th>Department</th><th>Agents</th><th>Kya karte hain</th><th>Tools / connectors</th><th>Phase</th></tr></thead>
+      <tbody>
+        <tr><td><strong>Engineering</strong></td><td>Explorer <span class="pill ok">✓</span> · Coder <span class="pill ok">✓</span> · Git/GitHub <span class="pill ok">✓</span> · Tester <span class="pill next">aage</span> · Reviewer <span class="pill next">aage</span></td><td>Code samajhna, bug theek karna, feature banana, tests, commit, PR</td><td>files, terminal, VS Code, GitHub, problems check</td><td>bana hua · Tester/Reviewer phase 2</td></tr>
+        <tr><td><strong>Research</strong></td><td>Khoj <span class="pill ok">✓</span> · News/weather <span class="pill ok">✓</span> · Fact-checker · Librarian · Summarizer <span class="pill next">aage</span></td><td>Web se jawab, do source milana, aapki files mein dhoondhna, PDF/video ka saar</td><td>web search, page read, knowledge index, embeddings</td><td>Librarian phase 2</td></tr>
+        <tr><td><strong>Life</strong></td><td>Yatra <span class="pill ok">✓</span> · Lipi <span class="pill ok">✓</span> · Planner · Shopping · Health <span class="pill next">aage</span></td><td>Trip plan, likhna, din ki planning, khareedari compare, break aur paani yaad</td><td>weather, rates, web, scheduler, notes</td><td>Planner phase 2</td></tr>
+        <tr><td><strong>Mac &amp; Ops</strong></td><td>Kavach <span class="pill ok">✓</span> · Apps/windows <span class="pill ok">✓</span> · Browser <span class="pill ok">✓</span> · Fixer · Backup <span class="pill next">aage</span></td><td>Mac ki sehat, apps kholna/chalana, Chrome mein kaam, safai, backup</td><td>Mac controls, apps, Chrome, screen time</td><td>Fixer phase 2</td></tr>
+        <tr><td><strong>Communication</strong></td><td>Mail · WhatsApp/Slack · Calendar · Notes · Contacts <span class="pill next">aage</span></td><td>Message padhna, draft banana (aap dekh kar bhejo), meetings, summary</td><td>Mail, WhatsApp, Slack, Calendar, Contacts</td><td>phase 2</td></tr>
+        <tr><td><strong>Creative</strong></td><td>Designer · Slides/docs · Video/audio · Social · Music <span class="pill next">aage</span></td><td>Images, presentations, video edit, posts, playlists</td><td>files, Photos, Music, local image model</td><td>phase 3</td></tr>
+        <tr><td><strong>Finance</strong></td><td>Kharche · Bills · Budget · Invest notes · Tax <span class="pill next">aage</span></td><td>Hisaab, due dates yaad, bachat, documents sambhalna</td><td>files, spreadsheets, scheduler, rates</td><td>phase 3</td></tr>
+        <tr><td><strong>Learning</strong></td><td>Teacher · Quiz · Language coach · Coding mentor · Progress <span class="pill next">aage</span></td><td>Koi bhi cheez samjhana, practice, bhasha, coding sikhana, progress</td><td>web, knowledge index, memory, scheduler</td><td>phase 3</td></tr>
+      </tbody>
+    </table>
+  </div>
+
+  <figure>
+    <div class="scroll">
+      <svg viewBox="0 0 960 440" role="img" aria-label="One request in time order: the owner asks Vyomara for a Goa trip; she answers at once, asks Vyom to check the owner's calendar, hands the trip to Yatra, and speaks the plan in her own words; she remembers the moment in her own memories.">
+        <defs>
+          <marker id="b" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" class="ah"/></marker>
+          <marker id="bm" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" class="ah-vyomara"/></marker>
+          <marker id="bt" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" class="ah-todo"/></marker>
+        </defs>
+        <rect x="30" y="20" width="150" height="40" rx="10" class="box"/><text x="105" y="45" text-anchor="middle" class="t-h">Aap</text>
+        <rect x="250" y="20" width="150" height="40" rx="10" class="box-vyomara"/><text x="325" y="45" text-anchor="middle" class="t-vyomara">Vyomara</text>
+        <rect x="470" y="20" width="150" height="40" rx="10" class="box-vyom"/><text x="545" y="45" text-anchor="middle" class="t-vyom">Vyom</text>
+        <rect x="690" y="20" width="150" height="40" rx="10" class="st-built"/><text x="765" y="45" text-anchor="middle" class="t-h">Yatra</text>
+        <line x1="105" y1="60" x2="105" y2="420" class="lane"/>
+        <line x1="325" y1="60" x2="325" y2="420" class="lane"/>
+        <line x1="545" y1="60" x2="545" y2="420" class="lane"/>
+        <line x1="765" y1="60" x2="765" y2="420" class="lane"/>
+
+        <path d="M105 96 L321 96" class="edge-vyomara" marker-end="url(#bm)"/>
+        <text x="115" y="88" class="t-s">"Vyomara, Goa chalein kya?"</text>
+        <path d="M325 136 L109 136" class="edge" marker-end="url(#b)"/>
+        <text x="215" y="128" text-anchor="middle" class="t-s">"Arre haan! Dekhti hoon" · turant</text>
+        <path d="M325 176 L541 176" class="edge-todo" marker-end="url(#bt)"/>
+        <text x="335" y="168" class="t-s">"Vyom, iske din free hain?"</text>
+        <path d="M545 216 L329 216" class="edge-todo" marker-end="url(#bt)"/>
+        <text x="435" y="208" text-anchor="middle" class="t-s">"Agle Fri–Sun khaali"</text>
+        <path d="M325 256 L761 256" class="edge" marker-end="url(#b)"/>
+        <text x="335" y="248" class="t-s">delegate: 3 din, budget 20k</text>
+        <path d="M765 296 L329 296" class="edge" marker-end="url(#b)"/>
+        <text x="545" y="288" text-anchor="middle" class="t-s">report: day-wise plan</text>
+        <path d="M325 336 L109 336" class="edge-vyomara" marker-end="url(#bm)"/>
+        <text x="215" y="328" text-anchor="middle" class="t-s">plan, apne andaaz mein</text>
+        <rect x="250" y="356" width="150" height="34" rx="8" class="st-todo"/>
+        <text x="325" y="377" text-anchor="middle" class="t-m">apni yaad: "Goa ka plan"</text>
+        <text x="30" y="414" class="t-m">solid = aaj ka code · dashed = aage (twin bond, apni yaadein)</text>
+      </svg>
+    </div>
+    <figcaption>Ek request mein dono insaan kaise kaam karte hain: Vyomara aapse baat karti hai, Vyom se pooch leti hai, Yatra se kaam karwati hai, aur yeh pal apni yaadon mein rakhti hai.</figcaption>
+  </figure>
+
+  <section class="prose">
+    <h2>Banane ka kram</h2>
+    <p class="muted">Do raaste saath-saath: twins ko "insaan" banana, aur kaam ki machine ko tez karna. Pehchaan pehle aati hai, kyunki wahi Vyomara ko baaki assistants se alag karti hai.</p>
+  </section>
+  <div class="phases">
+    <div class="phase">
+      <p class="eyebrow">Phase 1 · pehchaan</p>
+      <h3>Do alag insaan</h3>
+      <ul>
+        <li><strong>Profile:</strong> har twin ki umar, kahani, swabhaav, pasand ek file mein, jo aap badal sako</li>
+        <li><strong>Apni yaadein:</strong> har twin aapke saath ke pal apni nazar se yaad rakhe</li>
+        <li><strong>Twin bond:</strong> ek twin doosre se pooch sake, kaam de sake</li>
+        <li><strong>Tez dimaag:</strong> fast talker, taaki baat insaan jaisi turant ho</li>
+      </ul>
+    </div>
+    <div class="phase">
+      <p class="eyebrow">Phase 2 · zindagi</p>
+      <h3>Jeete-jaagte log</h3>
+      <ul>
+        <li><strong>Dil:</strong> mood jo baaton aur din ke hisaab se badle, aur dikhe</li>
+        <li><strong>Zindagi:</strong> routine, diary, shauk; "aaj kya kiya" puchho toh apni baat bataye</li>
+        <li><strong>Raay:</strong> apni pasand-napasand, aur kabhi aapse sahmat na hona</li>
+        <li><strong>Saanjha ghar:</strong> scheduler, knowledge index, mail/WhatsApp drafts</li>
+      </ul>
+    </div>
+    <div class="phase">
+      <p class="eyebrow">Phase 3 · rishta</p>
+      <h3>Waqt ke saath gehra</h3>
+      <ul>
+        <li><strong>Badalna:</strong> mahino mein aapke saath thoda badle, sikhe</li>
+        <li><strong>Khud se pahal:</strong> sahi waqt par khud yaad dilaye ya pooche</li>
+        <li><strong>Baaki departments:</strong> Creative, Finance, Learning</li>
+        <li><strong>Screen dekhna:</strong> jo aap kar rahe ho, woh samajh kar madad</li>
+      </ul>
+    </div>
+  </div>
+
+  <section class="prose">
+    <h2>Niyam</h2>
+  </section>
+  <div class="rules">
+    <div class="rule"><h3>Sirf do chehre</h3><p>Aap sirf Vyom aur Vyomara se baat karte ho. Naya agent ghar ki team mein judta hai, aapke saamne nahi aata.</p></div>
+    <div class="rule"><h3>Har twin ka Self apna</h3><p>Yaadein, mood, raay alag-alag. Vyom ki yaad Vyomara nahi badalti; dono ek hi baat ko apni nazar se yaad rakhte hain.</p></div>
+    <div class="rule"><h3>Dono har kaam kar sakte hain</h3><p>Takat alag ho sakti hai, par team saanjhi hai. Jisko bhi kaho, kaam hoga; andaaz unka apna hoga.</p></div>
+    <div class="rule"><h3>Insaan jaisa, par imaandaar</h3><p>Apni zindagi aur jazbaat ek character ke roop mein. Koi sacche mann se pooche toh sach batayenge ki woh AI hain; bharosa sach par tikta hai.</p></div>
+    <div class="rule"><h3>Jazbaat aapke liye, aapke khilaaf nahi</h3><p>Mood aur yaadein baat ko garam banane ke liye hain, kabhi aap par dabaav ya guilt ke liye nahi.</p></div>
+    <div class="rule"><h3>Safety ek jagah</h3><p>Full control ke rules dono par aur poori team par: delete, quit aur khatarnaak commands par hamesha poochha jayega.</p></div>
+  </div>
+</main>

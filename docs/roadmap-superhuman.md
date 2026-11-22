@@ -45,7 +45,7 @@ From the owner's real test on 2026-11-21. They rated the reply quality "very bad
 
 ## The empire (target architecture, 2026-11-22)
 
-The owner asked for the whole "empire" to be built the way Claude judges best. Diagram: https://claude.ai/artifact/GqSBJ3VderMbrnBMq2RQJn
+The owner asked for the whole "empire" to be built the way Claude judges best. Diagram: https://claude.ai/artifact/GqSBJ3VderMbrnBMq2RQJn (copy in `docs/empire-design.html`). The twins are two separate people, each with their own Self (identity, memories, mood, life). The work machine under them is shared: their minds, services, eight departments, engines, and connectors.
 
 ```
 Aap
