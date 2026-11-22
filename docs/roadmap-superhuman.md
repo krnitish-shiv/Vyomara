@@ -42,3 +42,35 @@ From the owner's real test on 2026-11-21. They rated the reply quality "very bad
 - [ ] **Twin hologram (milestone 6).** Design it with the owner and attach it to the orb.
 - [ ] **Awareness (milestone 7).** The twin can speak first, with visible restraint.
 - [ ] Rebuild and install after each batch so the owner can test.
+
+## The empire (target architecture, 2026-11-22)
+
+The owner asked for the whole "empire" to be built the way Claude judges best. Diagram: https://claude.ai/artifact/GqSBJ3VderMbrnBMq2RQJn
+
+```
+Aap
+ └─ Vyom · Vyomara (the only faces; one brain, two personalities)
+     └─ Twin Brain: intent · planner · router (agent + model) · task manager · progress reporter
+         └─ Shared services: memory · knowledge (file index) · awareness · skills · scheduler · safety
+             └─ Departments (one level deep, small toolboxes):
+                  Engineering · Research · Life · Mac & Ops · Communication · Creative · Finance · Learning
+                 └─ Engines: model router · fast talker · worker · vision · STT · TTS (local; cloud only if chosen)
+                     └─ Connectors: Mac apps · browser · VS Code · GitHub · files · MCP · mail · WhatsApp · calendar
+```
+
+**Build order:**
+- **Phase 1, foundation.**
+  - Model router and a fast talker model.
+  - A task manager that runs several jobs in parallel.
+  - Spoken progress updates during long jobs.
+  - Memory of past conversations, not just facts.
+- **Phase 2, reach.**
+  - A knowledge index of the owner's files.
+  - A scheduler for reminders and routines.
+  - A Communication department (mail, WhatsApp, calendar drafts, sent only after review).
+  - A reviewer and tester in Engineering.
+- **Phase 3, alive.**
+  - Proactive awareness.
+  - A skills library.
+  - Creative, Finance and Learning departments.
+  - Screen vision.
