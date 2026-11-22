@@ -62,7 +62,7 @@ Aap
 - **Phase 1, foundation.**
   - Model router and a fast talker model.
   - A task manager that runs several jobs in parallel.
-  - Spoken progress updates during long jobs.
+  - Spoken progress updates during long jobs (done, 2026-11-22).
   - Memory of past conversations, not just facts.
 - **Phase 2, reach.**
   - A knowledge index of the owner's files.

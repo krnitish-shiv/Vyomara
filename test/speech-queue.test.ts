@@ -95,3 +95,16 @@ test('an empty queue closes at once and never reports speaking', async () => {
   await queue.close();
   assert.deepEqual(events, []);
 });
+
+test('busy is true while a clause is queued or playing', async () => {
+  let finish!: () => void;
+  const queue = new SpeechQueue<string>({ async prepare(t) { return t; }, play: () => new Promise<void>(resolve => { finish = resolve; }), discard() {} });
+  assert.equal(queue.busy, false);
+  queue.enqueue('one');
+  assert.equal(queue.busy, true);
+  await new Promise(resolve => setTimeout(resolve, 0));
+  assert.equal(queue.busy, true, 'playing');
+  finish();
+  await new Promise(resolve => setTimeout(resolve, 0));
+  assert.equal(queue.busy, false);
+});

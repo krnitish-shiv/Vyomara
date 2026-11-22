@@ -64,7 +64,10 @@ import { SelfEchoGuard } from '../desktop/self-echo.ts';
 import { FullControlApproval } from '../desktop/full-control.ts';
 import type { PreparedSpeech } from '../desktop/mac-speech.ts';
 import { ClauseStream } from '../shared/clause-stream.ts';
-import { acknowledgementFor } from '../shared/acknowledgement.ts';
+import { acknowledgementFor, progressLineFor } from '../shared/acknowledgement.ts';
+
+/** At most one spoken progress update this often during a long job. */
+const PROGRESS_SPACING_MS = 9_000;
 import type { SpeechModelId } from '../desktop/local-whisper.ts';
 import { LocalWhisperServer, resolveWhisperServer } from '../desktop/whisper-server.ts';
 import type { LocalWhisperEvent } from '../desktop/local-whisper.ts';
@@ -169,6 +172,8 @@ interface LiveSpeech {
   readonly queue: SpeechQueue<PreparedSpeech>;
   /** Something was already said for this reply (text or an acknowledgement). */
   spoke: boolean;
+  /** When the last line was queued, for spacing progress updates. */
+  lastSpokenAt: number;
 }
 let liveSpeech: LiveSpeech | undefined;
 
@@ -178,6 +183,7 @@ function startLiveSpeech(requestId: string): LiveSpeech {
   const live: LiveSpeech = {
     requestId,
     spoke: false,
+    lastSpokenAt: 0,
     clauses: new ClauseStream(),
     queue: new SpeechQueue<PreparedSpeech>({
       prepare: text => macSpeechRunner.prepare(text, gender),
@@ -1005,6 +1011,7 @@ ipcMain.handle('vyomara:chat-send', async (_event, input: unknown) => {
           send('vyomara:chat-text', { requestId: request.requestId, text });
           if (live) for (const clause of live.clauses.push(text)) {
             live.spoke = true;
+            live.lastSpokenAt = Date.now();
             selfEcho.noteSpoken(clause);
             live.queue.enqueue(clause);
           }
@@ -1014,7 +1021,14 @@ ipcMain.handle('vyomara:chat-send', async (_event, input: unknown) => {
           // Speak first, then work: a short line when the first tool starts and nothing was said yet.
           if (live && !live.spoke && activity.status === 'running') {
             live.spoke = true;
+            live.lastSpokenAt = Date.now();
             const line = acknowledgementFor(activity.toolId, activity.label, personaFor(persona).gender);
+            selfEcho.noteSpoken(line);
+            live.queue.enqueue(line);
+          } else if (live && activity.status === 'running' && !live.queue.busy && Date.now() - live.lastSpokenAt > PROGRESS_SPACING_MS) {
+            // A long job: a short spoken update instead of silence.
+            live.lastSpokenAt = Date.now();
+            const line = progressLineFor(activity.toolId, activity.label, personaFor(persona).gender);
             selfEcho.noteSpoken(line);
             live.queue.enqueue(line);
           }

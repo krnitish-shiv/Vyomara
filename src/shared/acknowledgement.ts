@@ -39,3 +39,31 @@ export function acknowledgementFor(toolId: string, label: string, gender: 'male'
       return `Ek second, dekh ${verb} hoon.`;
   }
 }
+
+/** What a tool is doing, as a short Hinglish phrase ("weather dekh"), for progress lines. */
+const DOING: Readonly<Record<string, string>> = {
+  web_search: 'web par dhoondh', fetch_url: 'page padh', news_headlines: 'khabrein dekh', weather: 'mausam dekh',
+  currency_convert: 'rate dekh', software_version: 'latest version dekh', read_file: 'file padh', search_text: 'code mein dhoondh',
+  find_files: 'files dhoondh', directory_tree: 'project dekh', list_directory: 'folder dekh', edit_file: 'code badal',
+  multi_edit: 'code badal', write_file: 'file likh', run_command: 'command chala', check_problems: 'errors check kar',
+  git_info: 'git dekh', git_commit: 'commit kar', github: 'GitHub dekh', open_application: 'app khol', open_url: 'link khol',
+  browser: 'browser mein kaam kar', system_info: 'Mac check kar', screen_time: 'screen time dekh', explore: 'code samajh',
+};
+
+/**
+ * A short spoken update during a long job, so the user is not left in silence:
+ * "Abhi mausam dekh raha hoon." or, for a team member, "Yatra abhi mausam dekh rahi hai."
+ * `label` is the activity label ("Yatra: Getting the weather…" for a member's step).
+ */
+export function progressLineFor(toolId: string, label: string, gender: 'male' | 'female'): string {
+  const doing = DOING[toolId] ?? 'kaam kar';
+  const member = /^(\w+): /u.exec(label)?.[1];
+  if (member && isTeamMemberId(member.toLowerCase())) {
+    const memberGender = TEAM_GENDER[member.toLowerCase()] ?? 'male';
+    return `${member} abhi ${doing} ${memberGender === 'female' ? 'rahi' : 'raha'} hai.`;
+  }
+  return `Abhi ${doing} ${gender === 'female' ? 'rahi' : 'raha'} hoon.`;
+}
+
+/** The team members' grammatical gender, for "Yatra … rahi hai". */
+const TEAM_GENDER: Readonly<Record<string, 'male' | 'female'>> = { khoj: 'male', yatra: 'female', kavach: 'male', lipi: 'female' };

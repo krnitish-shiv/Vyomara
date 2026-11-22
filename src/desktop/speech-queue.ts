@@ -19,10 +19,18 @@ export class SpeechQueue<Prepared> {
   #started = false;
   #worker: Promise<void> | undefined;
   #wake: (() => void) | undefined;
+  #playing = false;
+  /** Clauses taken from the queue and still being prepared. */
+  #preparing = 0;
 
   constructor(ports: SpeechQueuePorts<Prepared>, onSpeaking?: (speaking: boolean) => void) {
     this.#ports = ports;
     this.#onSpeaking = onSpeaking;
+  }
+
+  /** Something is queued or playing right now. */
+  get busy(): boolean {
+    return this.#playing || this.#preparing > 0 || this.#pending.length > 0;
   }
 
   /** True once at least one clause began playing. */
@@ -80,7 +88,9 @@ export class SpeechQueue<Prepared> {
           this.#started = true;
           this.#onSpeaking?.(true);
         }
+        this.#playing = true;
         await this.#ports.play(prepared).catch(() => undefined);
+        this.#playing = false;
       }
     } finally {
       if (next) void next.then(prepared => { if (prepared !== undefined) this.#ports.discard(prepared); });
@@ -89,6 +99,7 @@ export class SpeechQueue<Prepared> {
   }
 
   #prepare(text: string): Promise<Prepared | undefined> {
-    return this.#ports.prepare(text).catch(() => undefined);
+    this.#preparing += 1;
+    return this.#ports.prepare(text).catch(() => undefined).finally(() => { this.#preparing -= 1; });
   }
 }

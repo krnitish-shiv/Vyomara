@@ -10,3 +10,11 @@ test('the twin says a short gendered line before working', () => {
   assert.equal(acknowledgementFor('open_application', 'Opening Safari', 'male'), 'Haan, khol raha hoon.');
   assert.equal(acknowledgementFor('read_file', 'Reading x', 'female'), 'Ek second, dekh rahi hoon.');
 });
+
+test('progress lines say what is happening, for the twin or a team member', async () => {
+  const { progressLineFor } = await import('../src/shared/acknowledgement.ts');
+  assert.equal(progressLineFor('weather', 'Yatra: Getting the weather for Goa', 'female'), 'Yatra abhi mausam dekh rahi hai.');
+  assert.equal(progressLineFor('web_search', 'Khoj: Searching the web for “x”', 'female'), 'Khoj abhi web par dhoondh raha hai.');
+  assert.equal(progressLineFor('run_command', 'Running `pnpm test`', 'male'), 'Abhi command chala raha hoon.');
+  assert.equal(progressLineFor('mystery_tool', 'Doing x', 'female'), 'Abhi kaam kar rahi hoon.');
+});

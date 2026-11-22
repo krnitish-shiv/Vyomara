@@ -20,6 +20,8 @@ All notable changes to Vyomara are listed here. Versions follow
   speak and for 0.6 s after, and anything heard that matches what the twin just
   said is dropped. Talking over the twin to interrupt is off for now (press the
   orb); their voice plays inside the app, ready for it (ADR-0031).
+- During long jobs the twins give a short spoken update about every 9 s
+  ("Yatra abhi mausam dekh rahi hai", "Abhi command chala raha hoon").
 - The twins say a short line the moment they start working ("Khoj ko de rahi
   hoon", "Ek second, dekh raha hoon"), so you never wait in silence.
 - Your turn ends sooner when the sentence sounds finished and waits longer
