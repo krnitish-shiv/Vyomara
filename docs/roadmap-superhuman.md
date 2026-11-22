@@ -43,6 +43,25 @@ From the owner's real test on 2026-11-21. They rated the reply quality "very bad
 - [ ] **Awareness (milestone 7).** The twin can speak first, with visible restraint.
 - [ ] Rebuild and install after each batch so the owner can test.
 
+## The empire: build spec v1 (2026-11-22, after outside research)
+
+**The build reference is now [empire-spec.md](./empire-spec.md).** It wins over the older notes below wherever the two disagree. The diagram is version 8 of the same artifact (copy in `docs/empire-design.html`).
+
+What the research changed:
+- **Desks, not member agents.** Each of the 10 teams is one desk: a static brief plus about 6 skills that load on demand. The old members become skills.
+- **Subagents only in three cases:** sweeps, big reads and clean-context verification.
+- **Desks are tools that return structured reports.** The twin always speaks.
+- **Help requests** are a structured field in the report. Code schedules them, one hop only.
+- **A task ledger and a progress ledger** in SQLite, with budgets, stall-based replanning and resume.
+- **One memory table** with owner, visibility and secret fields enforced in SQL before search. Every item has provenance, and deletes cascade.
+- **Mood numbers are owned by code.** The model only classifies events.
+- **Escalation to the bigger model is rule-based.**
+- **Modes:** voice + work (14B worker, 4B talker, STT, TTS, ≈18.7 GB) and Deep work (Qwen3-Coder-30B-A3B).
+- **Ollama:** contexts are pinned, the KV cache is q8 and flash attention is on.
+- **Circuit breakers per engine.**
+- **Evals with pass^3,** including a privacy-leak suite (gate: 0 leaks), a persona-drift suite and a no-pressure suite.
+- **Every phase has acceptance criteria.**
+
 ## The empire (target architecture, 2026-11-22)
 
 The owner asked for the whole "empire" to be built the way Claude judges best. Diagram: https://claude.ai/artifact/GqSBJ3VderMbrnBMq2RQJn (copy in `docs/empire-design.html`). The twins are two separate people, each with their own Self (identity, memories, mood, life). The work machine under them is shared: their minds, services, eight departments, engines, and connectors.

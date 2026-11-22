@@ -134,16 +134,17 @@
 
 <main>
   <header>
-    <p class="eyebrow">Vyomara empire · final design</p>
+    <p class="eyebrow">Vyomara empire · final design v8 · research ke baad</p>
     <h1>Do insaan, ek saltanat</h1>
     <p class="lede">Vyom aur Vyomara do alag log hain, apni pehchaan, yaadein, jazbaat aur zindagi ke saath. Aap jisko bulate ho, sirf wahi jawab deta hai. Dono ek doosre ko poora jaante hain, par apni private baatein apne paas rakhte hain. Unke neeche ek systematic saltanat hai: dimaag, niyam, services, 10 teams, engines aur connectors.</p>
+    <p class="muted">Har banane wali detail (data, protocol, budget, tests) repo ki <code>docs/empire-spec.md</code> mein hai. Yeh page uska naksha hai.</p>
   </header>
 
   <div class="pillars">
     <div class="pillar"><b>Do insaan</b><span>Har twin ka apna Self: pehchaan, swabhaav, awaaz, dil, yaadein, zindagi.</span></div>
     <div class="pillar"><b>Jisko bulao, wahi bole</b><span>"Vyomara…" toh sirf Vyomara. "Vyom…" toh sirf Vyom. Doosra chup.</span></div>
     <div class="pillar"><b>Jaante sab, batate nahi sab</b><span>Ek doosre ko poora jaante hain; apni private tijori apni rehti hai.</span></div>
-    <div class="pillar"><b>Saanjha ghar</b><span>10 teams (har ek ka lead), engines aur connectors dono ke liye.</span></div>
+    <div class="pillar"><b>Saanjha ghar</b><span>10 teams: har team ek desk, jiske members "skills" hain jo zaroorat par judte hain.</span></div>
     <div class="pillar"><b>Saltanat ke niyam</b><span>Safety, privacy, quality, resources aur fallback ek jagah se.</span></div>
   </div>
 
@@ -636,12 +637,93 @@
   </figure>
 
   <section class="prose">
-    <h2>10 teams, detail mein</h2>
-    <p class="muted">Yeh teams aaj ke code se nahi, zindagi ke hisaab se chuni hain: kaam, jaankari, log, waqt, paisa, ghar aur sehat, safar, sikhna, creativity, aur tech. Har kaam ka ek pakka ghar; do teams ek hi kaam nahi karti.</p>
+    <h2>Research ke baad kya badla</h2>
+    <p class="muted">Poore design ko bahar ki research se parkha: Anthropic, Cognition, Google/MIT, Magentic-One, OpenAI Agents SDK; insaan jaisi memory (Generative Agents, Letta, Mem0, Zep, LongMemEval); aur 24 GB Mac par Ollama ki seemayein. Upar ka hissa (do insaan, darwaza, niyam, ek hop) sahi nikla. Beech ka hissa badla.</p>
   </section>
   <div class="table-wrap">
     <table>
-      <thead><tr><th>#</th><th>Team · lead</th><th>Members</th><th>Kya karti hai</th><th>Tools / connectors</th></tr></thead>
+      <thead><tr><th>Cheez</th><th>Pehle</th><th>Ab</th><th>Kyun</th></tr></thead>
+      <tbody>
+        <tr><td><strong>Teams</strong></td><td class="m">10 × 7 alag agents (~70)</td><td>10 <strong>desks</strong>; har desk ek fixed brief + ~6 <strong>skills</strong> jo zaroorat par load hoti hain</td><td class="m">Ek GPU par agents line mein lagte hain; har alag prompt = 45 s tak ka cache miss; role ke hisaab se baantna research mein sabse kharab nikla</td></tr>
+        <tr><td><strong>Team lead</strong></td><td class="m">alag LLM hop</td><td>desk ka brief hi lead hai; naam (Vishwa, Khoj…) wahi</td><td class="m">Har hop = dheemapan + baat bigadne ka mauka</td></tr>
+        <tr><td><strong>Alag agent kab</strong></td><td class="m">har member</td><td>sirf 3 kaam: badi research sweep, bada document/code padhna, saaf-nazar checker</td><td class="m">Faayda sirf tab jab context bachana ho</td></tr>
+        <tr><td><strong>Madad ki parchi</strong></td><td class="m">twin ke zariye</td><td>wahi, par ab report ka ek structured hissa; code use schedule karta hai</td><td class="m">Beech mein ek control = galti 4×, khule mein 17×</td></tr>
+        <tr><td><strong>Kaam ka hisaab</strong></td><td class="m">chat mein</td><td><strong>task ledger</strong>: plan, state, budget, atka toh dobara plan, crash ke baad wahin se</td><td class="m">Magentic-One aur Anthropic ka tareeka</td></tr>
+        <tr><td><strong>Yaadein</strong></td><td class="m">teen tarah (concept)</td><td>ek table; har yaad par malik, kaun dekh sakta, "mat batana"; rok code mein</td><td class="m">Prompt se privacy 7–8% leak hoti hai; code se 0</td></tr>
+        <tr><td><strong>Mood</strong></td><td class="m">"dil" (concept)</td><td>numbers code rakhta hai; model sirf ghatna pehchaanta hai</td><td class="m">Chhote model ghatna pehchaan lete hain, jazbaat ka hisaab nahi</td></tr>
+        <tr><td><strong>Bada model</strong></td><td class="m">twin khud tay kare</td><td>niyam se: checker 2 baar fail, kaam atka, ya bada code kaam</td><td class="m">Chhota model khud nahi jaanta kab madad chahiye</td></tr>
+        <tr><td><strong>Quality</strong></td><td class="m">👍/👎 + tests</td><td>+ checker, har test 3 baar (pass^3), har hafte character check</td><td class="m">Ek baar pass hona kaafi nahi; bharosa chahiye</td></tr>
+      </tbody>
+    </table>
+  </div>
+
+  <section class="prose">
+    <h2>Desk ke andar: ek team kaise kaam karti hai</h2>
+    <p class="muted">Team ab 7 alag log nahi, ek desk hai jiske paas 6 hunar (skills) hain. Twin kaam deta hai; desk sahi skill kholta hai, sirf 10 tak tools dekhta hai, zaroorat ho toh ek-do helper agent bhejta hai, aur ek report lautata hai. Report hamesha twin padhta hai aur apne andaaz mein bolta hai.</p>
+  </section>
+  <figure>
+    <div class="scroll">
+      <svg viewBox="0 0 1000 400" role="img" aria-label="Inside a desk: the twin sends a brief to the Engineering desk; the desk has a static brief and a skill catalog; it loads only the needed skill, such as debugger, which shows at most ten tools; for a large codebase it sends a helper agent with fresh context that returns a summary; a clean-context checker verifies; the desk returns a structured report to the twin through the task ledger, and the twin speaks.">
+        <defs>
+          <marker id="k" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" class="ah"/></marker>
+          <marker id="km" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" class="ah-vyomara"/></marker>
+        </defs>
+        <rect x="20" y="40" width="150" height="70" rx="12" class="box-vyomara"/>
+        <text x="95" y="68" text-anchor="middle" class="t-b">Twin</text>
+        <text x="95" y="86" text-anchor="middle" class="t-m">kaam + zaroori</text>
+        <text x="95" y="99" text-anchor="middle" class="t-m">jaankari hi</text>
+        <path d="M170 75 L258 75" class="edge-vyomara" marker-end="url(#km)"/>
+        <text x="214" y="66" text-anchor="middle" class="t-m">brief</text>
+        <rect x="260" y="24" width="440" height="250" rx="14" class="box"/>
+        <text x="280" y="50" class="t-h">Vishwa · Engineering desk</text>
+        <text x="280" y="70" class="t-m">fixed brief (~250 tokens) · cache garam rehta hai</text>
+        <rect x="280" y="86" width="190" height="168" rx="10" class="st-partial"/>
+        <text x="375" y="108" text-anchor="middle" class="t-b">Skill catalog</text>
+        <text x="296" y="132" class="t-s">architect</text>
+        <text x="296" y="152" class="t-s">coder</text>
+        <text x="296" y="172" class="t-b">debugger ← khuli</text>
+        <text x="296" y="192" class="t-s">tester</text>
+        <text x="296" y="212" class="t-s">reviewer</text>
+        <text x="296" y="232" class="t-s">devops</text>
+        <rect x="494" y="86" width="186" height="76" rx="10" class="st-built"/>
+        <text x="587" y="110" text-anchor="middle" class="t-b">Tools (≤ 10)</text>
+        <text x="587" y="128" text-anchor="middle" class="t-m">read · search · run</text>
+        <text x="587" y="144" text-anchor="middle" class="t-m">edit · git · web</text>
+        <rect x="494" y="176" width="186" height="78" rx="10" class="st-todo"/>
+        <text x="587" y="198" text-anchor="middle" class="t-b">Budget</text>
+        <text x="587" y="216" text-anchor="middle" class="t-m">15 tool calls · 10 min</text>
+        <text x="587" y="232" text-anchor="middle" class="t-m">2 helpers · 1 hop</text>
+        <text x="587" y="246" text-anchor="middle" class="t-m">same call 2× = ruko</text>
+        <rect x="780" y="24" width="200" height="70" rx="12" class="st-todo"/>
+        <text x="880" y="50" text-anchor="middle" class="t-b">Helper agent</text>
+        <text x="880" y="68" text-anchor="middle" class="t-m">naya context · bada code padhe</text>
+        <text x="880" y="83" text-anchor="middle" class="t-m">saar lautaye</text>
+        <path d="M700 70 L778 60" class="edge-todo" marker-end="url(#k)"/>
+        <rect x="780" y="120" width="200" height="70" rx="12" class="st-todo"/>
+        <text x="880" y="146" text-anchor="middle" class="t-b">Checker</text>
+        <text x="880" y="164" text-anchor="middle" class="t-m">sirf result + shartein</text>
+        <text x="880" y="179" text-anchor="middle" class="t-m">pass / fail</text>
+        <path d="M700 160 L778 156" class="edge-todo" marker-end="url(#k)"/>
+        <rect x="260" y="310" width="440" height="66" rx="12" class="st-todo"/>
+        <text x="480" y="334" text-anchor="middle" class="t-b">Report → task ledger</text>
+        <text x="480" y="352" text-anchor="middle" class="t-m">status · saar · saboot · confidence · sawaal</text>
+        <text x="480" y="366" text-anchor="middle" class="t-m">madad ki parchi · aapke faisle</text>
+        <path d="M480 274 L480 308" class="edge" marker-end="url(#k)"/>
+        <path d="M260 343 L95 343 L95 112" class="edge-vyomara" marker-end="url(#km)"/>
+        <text x="110" y="300" class="t-m">twin padhta hai,</text>
+        <text x="110" y="314" class="t-m">apne andaaz mein bolta</text>
+      </svg>
+    </div>
+    <figcaption>Har desk ek hi model par chalta hai, bas brief aur skill alag. Isse 24 GB Mac par cache garam rehta hai aur tool chunne mein galti kam hoti hai. Helper agent aur checker sirf tab, jab sach mein zaroorat ho.</figcaption>
+  </figure>
+
+  <section class="prose">
+    <h2>10 teams, detail mein</h2>
+    <p class="muted">Yeh teams aaj ke code se nahi, zindagi ke hisaab se chuni hain: kaam, jaankari, log, waqt, paisa, ghar aur sehat, safar, sikhna, creativity, aur tech. Har kaam ka ek pakka ghar; do teams ek hi kaam nahi karti. "Skills" pehle ke members hain: ab woh alag agent nahi, desk ke hunar hain.</p>
+  </section>
+  <div class="table-wrap">
+    <table>
+      <thead><tr><th>#</th><th>Team · desk</th><th>Skills</th><th>Kya karti hai</th><th>Tools / connectors</th></tr></thead>
       <tbody>
         <tr><td>1</td><td><strong>Engineering</strong><br><span class="who b">Vishwa</span></td><td>Architect, Coder, Debugger, Tester, Reviewer, DevOps</td><td class="m">Naya software design karna, code likhna, bug pakadna, tests, review, git aur deploy</td><td class="m">files, terminal, VS Code, GitHub, servers</td></tr>
         <tr><td>2</td><td><strong>Research</strong><br><span class="who b">Khoj</span></td><td>Web researcher, Fact-checker, Librarian, Summarizer, Analyst, News</td><td class="m">Kisi bhi sawaal ka pakka jawab, aapki files se jawab, lambi cheez ka saar, tulna karke faisla, khabrein</td><td class="m">web, page read, knowledge index, embeddings</td></tr>
@@ -720,7 +802,7 @@
         <path d="M580 92 L752 170" class="edge-vyomara" marker-end="url(#hm)"/>
         <text x="640" y="118" class="t-s">2 · Khoj ko kaam</text>
         <path d="M710 236 L292 236" class="edge" marker-end="url(#h)" stroke-dasharray="1 0"/>
-        <text x="500" y="228" text-anchor="middle" class="t-s">3 · jawab seedha Vishwa ko</text>
+        <text x="500" y="228" text-anchor="middle" class="t-s">3 · jawab ledger se Vishwa ko, kaam wahin se aage</text>
         <text x="500" y="300" text-anchor="middle" class="t-m">aap: step list mein "Vishwa ne Khoj se madad maangi" · aapko roka nahi jaata</text>
         <text x="500" y="320" text-anchor="middle" class="t-m">ek hop ki seema: helper aage kisi teesri team ko parchi nahi bhejta; zaroorat ho toh twin tay kare</text>
       </svg>
@@ -729,7 +811,7 @@
   </figure>
   <div class="rules">
     <div class="rule"><h3>Common toolkit sabke paas</h3><p>Jaldi web search, page padhna, time, calculator. Chhoti zaroorat ke liye kisi team ko bulana nahi padta.</p></div>
-    <div class="rule"><h3>Badi madad parchi se</h3><p>Team twin ko parchi bhejti hai; twin sahi team chunta hai; jawab maangne wali team ko wapas. Aapse tabhi poocha jaata hai jab koi faisla aapka ho.</p></div>
+    <div class="rule"><h3>Badi madad parchi se</h3><p>Parchi desk ki report ka ek hissa hai: kya chahiye, kyun, kaunsi files, kaam ruka hai ya nahi. Twin ka task manager (code) sahi desk chalata hai; jawab ledger mein judta hai aur maangne wala desk wahin se aage badhta hai. Aapse tabhi poocha jaata hai jab koi faisla aapka ho.</p></div>
     <div class="rule"><h3>Seedhe call nahi, ek hop</h3><p>Teams ek doosre ko seedhe nahi bulaati, aur helper aage parchi nahi bhejta. Isse chakkar nahi banta aur twin ko sab pata rehta hai.</p></div>
     <div class="rule"><h3>Sirf zaroori jaankari</h3><p>Helper ko sirf parchi ka sawaal milta hai; twin ki tijori aur aapki baaki baatein nahi.</p></div>
   </div>
@@ -738,11 +820,130 @@
     <h2>Teams kab aur kaise badhengi</h2>
   </section>
   <div class="rules">
-    <div class="rule"><h3>Naya member pehle</h3><p>Kisi team mein ek tarah ka kaam baar-baar aaye, toh pehle usi team mein naya member judta hai. Naya ghar tabhi, jab woh kaam kisi team mein fit na ho.</p></div>
-    <div class="rule"><h3>Team tab todo</h3><p>Ek team mein 7 se zyada members ho jaayein ya do alag tarah ke kaam milne lagein, toh woh do teams mein bant-ti hai.</p></div>
+    <div class="rule"><h3>Nayi skill pehle</h3><p>Kisi team mein ek tarah ka kaam baar-baar aaye, toh pehle usi desk mein nayi skill judti hai. Naya desk tabhi, jab woh kaam kisi desk mein fit na ho.</p></div>
+    <div class="rule"><h3>Desk tab todo</h3><p>Ek desk mein 8 se zyada skills ho jaayein, 20 se zyada tools chahiye hon, ya do alag tarah ke kaam milne lagein, toh woh do desks mein bant-ta hai.</p></div>
     <div class="rule"><h3>Aage ki teams</h3><p>Jab zaroorat ho: Legal &amp; Documents (agreements, sarkari kaam), Family &amp; Kids (school, events), Business (agar aap apna kaam shuru karo), aur Home ko Health se alag karna.</p></div>
-    <div class="rule"><h3>Har naya member ek jaisa</h3><p>Ek chhota brief, sirf zaroori tools, ek eval test. Aapke saamne kuch nahi badalta: aap ab bhi sirf Vyom aur Vyomara se baat karte ho.</p></div>
+    <div class="rule"><h3>Har nayi skill ek jaisi</h3><p>Ek SKILL.md (chhota brief + kab use karna), sirf zaroori tools, aur 20 eval tests. Aapke saamne kuch nahi badalta: aap ab bhi sirf Vyom aur Vyomara se baat karte ho.</p></div>
   </div>
+
+  <section class="prose">
+    <h2>Yaadein: ek card, teen tijoriyan</h2>
+    <p class="muted">Har yaad ek card hai. Card par likha hai kiski hai, kiske baare mein, kaun dekh sakta hai, kisne suna, kahan se aayi, aur kisse chhupani hai. Twin ko sirf woh card dikhte hain jo use dikhne chahiye; yeh rok model se pehle code mein lagti hai, isliye leak ho hi nahi sakta.</p>
+  </section>
+  <div class="table-wrap">
+    <table>
+      <thead><tr><th>Card ka hissa</th><th>Matlab</th><th>Misaal</th></tr></thead>
+      <tbody>
+        <tr><td><strong>malik</strong></td><td class="m">vyom · vyomara · shared</td><td class="m">Vyomara ki diary = vyomara</td></tr>
+        <tr><td><strong>kiske baare mein</strong></td><td class="m">aap · vyom · vyomara · duniya</td><td class="m">"Vyom ko chai pasand" = vyom</td></tr>
+        <tr><td><strong>kaun dekhe</strong></td><td class="m">private · twin_shared · household</td><td class="m">aapki allergy = household (dono)</td></tr>
+        <tr><td><strong>kisse chhupana</strong></td><td class="m">"mat batana" wali list</td><td class="m">surprise party = Vyom se chhupa</td></tr>
+        <tr><td><strong>kahan se</strong></td><td class="m">aapne kaha · twin ne kaha · andaza · soch · kahani</td><td class="m">twin ki "walk" = kahani, sach nahi</td></tr>
+        <tr><td><strong>kab sach</strong></td><td class="m">kab se kab tak sach tha; purani baat mitti nahi, band hoti hai</td><td class="m">"ab Pune mein" purane "Delhi" ko band karta hai</td></tr>
+        <tr><td><strong>zaroori kitna</strong></td><td class="m">1–10, aur us waqt ka jazbaat</td><td class="m">beti ka janam = 10, kabhi nahi bhoolta</td></tr>
+        <tr><td><strong>kisse bani</strong></td><td class="m">soch aur diary apne saboot batate hain</td><td class="m">asli yaad mitao → usse bani soch bhi mite</td></tr>
+      </tbody>
+    </table>
+  </div>
+  <div class="rules">
+    <div class="rule"><h3>Likhte waqt</h3><p>Har baat se tathya nikalo, tareekh code se pakki karo (kal, parso, pichle hafte), "mat batana" pehle niyam se pakdo, phir purani yaad se milao: nayi, update, ya kuch nahi. Password, OTP, Aadhaar kabhi nahi.</p></div>
+    <div class="rule"><h3>Dhoondhte waqt</h3><p>Nayi + zaroori + matlab ki yaad upar. Matlab do tarah se: shabd se (naam, Hinglish) aur arth se (embedding), dono milakar.</p></div>
+    <div class="rule"><h3>Raat ko</h3><p>Mac khali ho toh har twin apni diary likhta hai aur din par sochta hai. Private yaad se bani soch bhi private rehti hai.</p></div>
+    <div class="rule"><h3>Bolne se pehle</h3><p>Jawab ko "mat batana" wali yaadon se milaya jaata hai. Milta hai toh dobara likho; phir bhi mile toh pyaar se taal do.</p></div>
+  </div>
+
+  <section class="prose">
+    <h2>Dil: mood ka hisaab</h2>
+    <p class="muted">Mood ke numbers code rakhta hai; model sirf yeh batata hai ki kya hua. Har twin ka apna normal hai, aur mood dheere-dheere wapas usi par aata hai, jaise insaan ka.</p>
+  </section>
+  <div class="table-wrap">
+    <table>
+      <thead><tr><th>Hissa</th><th>Vyom / Vyomara ka normal</th><th>Kitni der mein normal</th><th>Kya badalta hai</th></tr></thead>
+      <tbody>
+        <tr><td><strong>Khushi</strong></td><td class="m">0.2 / 0.3</td><td class="m">~6 ghante</td><td class="m">thanks, achhi khabar (+); rude baat, kaam fail (−)</td></tr>
+        <tr><td><strong>Josh</strong></td><td class="m">0.1 / 0.2</td><td class="m">~6 ghante</td><td class="m">joke chala (+), der raat (−)</td></tr>
+        <tr><td><strong>Taakat</strong></td><td class="m">din ke routine se</td><td class="m">—</td><td class="m">subah taaza, raat thaka</td></tr>
+        <tr><td><strong>Aapse rishta</strong></td><td class="m">0.5 se shuru</td><td class="m">~30 din</td><td class="m">mahino ki baatein</td></tr>
+        <tr><td><strong>Twin se rishta</strong></td><td class="m">0.8</td><td class="m">~30 din</td><td class="m">ek doosre ki madad</td></tr>
+      </tbody>
+    </table>
+  </div>
+  <p class="muted" style="max-width:720px">Aapko sirf ek line dikhti hai: "thoda thaki hui, par khush — aaj ka bug fix ho gaya." Ek baar mein mood ±0.3 se zyada nahi badalta. Aap kuch din na aao toh twin "yaad aayi" kahega, kabhi guilt nahi dilayega.</p>
+
+  <section class="prose">
+    <h2>Task ledger: har kaam ka bahi-khata</h2>
+    <p class="muted">Har bada kaam ek ledger mein likha jaata hai, taaki kuch na bhoole, loop na bane, aur crash ke baad wahin se shuru ho.</p>
+  </section>
+  <figure>
+    <div class="scroll">
+      <svg viewBox="0 0 1000 200" role="img" aria-label="Task states: submitted, planning, working, verifying, completed. Working can go to input required when the owner must decide, and back. If no progress is made more than twice the plan is redone; after two replans the task ends with an honest partial result.">
+        <defs>
+          <marker id="l" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" class="ah"/></marker>
+        </defs>
+        <rect x="20" y="40" width="120" height="44" rx="10" class="box"/><text x="80" y="67" text-anchor="middle" class="t-b">submitted</text>
+        <path d="M140 62 L178 62" class="edge" marker-end="url(#l)"/>
+        <rect x="180" y="40" width="120" height="44" rx="10" class="box"/><text x="240" y="67" text-anchor="middle" class="t-b">planning</text>
+        <path d="M300 62 L338 62" class="edge" marker-end="url(#l)"/>
+        <rect x="340" y="40" width="120" height="44" rx="10" class="st-partial"/><text x="400" y="67" text-anchor="middle" class="t-b">working</text>
+        <path d="M460 62 L498 62" class="edge" marker-end="url(#l)"/>
+        <rect x="500" y="40" width="120" height="44" rx="10" class="box"/><text x="560" y="67" text-anchor="middle" class="t-b">verifying</text>
+        <path d="M620 62 L658 62" class="edge" marker-end="url(#l)"/>
+        <rect x="660" y="40" width="130" height="44" rx="10" class="st-built"/><text x="725" y="67" text-anchor="middle" class="t-b">completed</text>
+        <rect x="820" y="40" width="160" height="44" rx="10" class="band-gov"/><text x="900" y="60" text-anchor="middle" class="t-b">partial / failed</text><text x="900" y="76" text-anchor="middle" class="t-m">imaandaar jawab</text>
+        <rect x="340" y="130" width="160" height="44" rx="10" class="box-vyomara"/><text x="420" y="150" text-anchor="middle" class="t-b">input_required</text><text x="420" y="166" text-anchor="middle" class="t-m">aapka faisla</text>
+        <path d="M390 84 L390 128" class="edge" marker-end="url(#l)"/>
+        <path d="M450 128 L450 86" class="edge" marker-end="url(#l)"/>
+        <path d="M400 40 C 400 8, 240 8, 240 38" class="edge" marker-end="url(#l)"/>
+        <text x="320" y="18" text-anchor="middle" class="t-m">2 baar aage nahi badha → dobara plan</text>
+        <path d="M560 84 L560 110 L900 110 L900 86" class="edge" marker-end="url(#l)"/>
+        <text x="730" y="128" text-anchor="middle" class="t-m">2 replan ke baad bhi nahi → jo hua woh sach-sach</text>
+      </svg>
+    </div>
+    <figcaption>Har kaam ka budget hai (15 tool calls, 3 helpers, 10 minute, 2 replan). Ek hi tool same input ke saath do baar chale toh ruk jaata hai. Ho chuke step kabhi dobara nahi chalte.</figcaption>
+  </figure>
+
+  <section class="prose">
+    <h2>24 GB ka hisaab: kaunsa model kab</h2>
+    <p class="muted">Mac par lagbhag 18–19 GB models ke liye, baaki macOS aur apps ke liye. Model badalna "mode" badalna hai, har sawaal par nahi, kyunki model dobara load karna aur prompt dobara padhna 45–60 second le sakta hai.</p>
+  </section>
+  <div class="table-wrap">
+    <table>
+      <thead><tr><th>Engine</th><th>Model</th><th>Jagah</th><th>Kab load</th></tr></thead>
+      <tbody>
+        <tr><td><strong>Worker</strong> (dimaag)</td><td class="m">qwen3:14b · context 12k pakka</td><td class="m">~10.8 GB</td><td class="m">hamesha</td></tr>
+        <tr><td><strong>Talker</strong> (turant jawab)</td><td class="m">Qwen3-4B · context 4k</td><td class="m">~3.1 GB</td><td class="m">voice mode mein</td></tr>
+        <tr><td><strong>Kaan</strong> (STT)</td><td class="m">whisper Hinglish q5</td><td class="m">~1.0 GB</td><td class="m">voice mode mein</td></tr>
+        <tr><td><strong>Awaaz</strong> (TTS)</td><td class="m">Maya 2 · Ritvik / Ahana</td><td class="m">~3.8 GB</td><td class="m">voice mode mein</td></tr>
+        <tr><td><strong>Yaad ka index</strong></td><td class="m">Qwen3-Embedding-0.6B</td><td class="m">~0.8 GB</td><td class="m">zaroorat par, bolte waqt nahi</td></tr>
+        <tr><td><strong>Gehra dimaag</strong></td><td class="m">Qwen3-Coder-30B-A3B</td><td class="m">~15.1 GB</td><td class="m">sirf "Deep work" mode (bada code, raat ka kaam)</td></tr>
+      </tbody>
+    </table>
+  </div>
+  <div class="rules">
+    <div class="rule"><h3>Voice + kaam (roz)</h3><p>Worker + talker + kaan + awaaz ≈ 18.7 GB. Tight hai, isliye yaad ka index sirf chup rehne par.</p></div>
+    <div class="rule"><h3>Deep work</h3><p>Gehra dimaag + kaan ≈ 16 GB. Jawab likh kar. Aap bolo, checker 2 baar fail ho, ya bada code kaam ho tab.</p></div>
+    <div class="rule"><h3>Ollama ki settings</h3><p>Flash attention on, KV cache q8 (aadhi jagah, quality lagbhag same), har model ka context pakka, ek model par ek request.</p></div>
+  </div>
+
+  <section class="prose">
+    <h2>Jab kuch toote</h2>
+    <p class="muted">Har engine ka apna "fuse" hai: 3 baar fail toh band, 30 second baad phir koshish. Twin kabhi chup ya atka nahi rehta.</p>
+  </section>
+  <div class="table-wrap">
+    <table>
+      <thead><tr><th>Kya toota</th><th>Twin kya karta hai</th></tr></thead>
+      <tbody>
+        <tr><td>Awaaz (TTS)</td><td class="m">likh kar jawab, UI mein chhota note</td></tr>
+        <tr><td>Kaan (STT)</td><td class="m">keyboard se baat</td></tr>
+        <tr><td>Worker</td><td class="m">talker haan bolta hai, kaam line mein</td></tr>
+        <tr><td>Talker</td><td class="m">worker chhota jawab deta hai</td></tr>
+        <tr><td>Yaad ka index</td><td class="m">sirf shabd se dhoondhna</td></tr>
+        <tr><td>Internet</td><td class="m">turant saaf batana, kaam baad ke liye rakhna</td></tr>
+        <tr><td>Kaam beech mein crash</td><td class="m">"continue" button; ho chuke step dobara nahi</td></tr>
+      </tbody>
+    </table>
+  </div>
+  <p class="muted" style="max-width:720px">Teen seedhi: (1) wahi desk ek baar aur, (2) chhota plan, (3) jo mila woh imaandaari se, jo nahi mila woh bhi bata kar. Jo kaam bahar kuch karta hai (mail, delete) woh apne aap dobara kabhi nahi chalta.</p>
 
   <section class="prose">
     <h2>Banane ka kram</h2>
@@ -754,9 +955,11 @@
       <h3>Tez aur bharosemand</h3>
       <ul>
         <li><strong>Fast talker + model router</strong></li>
-        <li><strong>Resource manager:</strong> 24 GB mein kaunsa model kab</li>
-        <li><strong>Fallback:</strong> offline, model down</li>
-        <li><strong>Quality loop:</strong> aapka 👍/👎 + eval tests</li>
+        <li><strong>Resource manager:</strong> modes, pakka context</li>
+        <li><strong>Task ledger:</strong> budget, resume</li>
+        <li><strong>Fallback:</strong> fuse har engine par</li>
+        <li><strong>Tracing</strong> + 👍/👎 + tests 3 baar</li>
+        <li><strong>Pass jab:</strong> chhoti baat ki awaaz &lt;1.2 s, voice mein model reload 0, talk tests ≥95%</li>
       </ul>
     </div>
     <div class="phase">
@@ -767,6 +970,8 @@
         <li><strong>Teen yaadein:</strong> private tijori, ek doosre ke baare mein, saanjhi</li>
         <li><strong>Privacy:</strong> "mat batana" wali baat sirf usi twin tak</li>
         <li><strong>Twin bond:</strong> chupke se poochna</li>
+        <li><strong>Desks:</strong> Vishwa, Khoj, Yatra, Kavach + skills, parchi, checker</li>
+        <li><strong>Pass jab:</strong> leak 0, dono alag pehchaane jaayein ≥90%, AI hone par sach 100%</li>
       </ul>
     </div>
     <div class="phase">
@@ -774,9 +979,10 @@
       <h3>Jeete log, lambe haath</h3>
       <ul>
         <li><strong>Dil, diary, raay:</strong> mood, apni baatein, asahmati</li>
-        <li><strong>Task manager:</strong> kai kaam saath</li>
-        <li><strong>Knowledge, scheduler</strong></li>
-        <li><strong>Sandesh, Samay, Griha;</strong> Engineering ke Tester, Reviewer</li>
+        <li><strong>Raat ki diary</strong> aur soch, badalta swabhaav (changelog)</li>
+        <li><strong>Knowledge index, scheduler,</strong> Deep work mode</li>
+        <li><strong>Sandesh, Samay, Griha</strong> desks</li>
+        <li><strong>Pass jab:</strong> dabaav 0, naye desk ≥80%, diary mein doosre ka raaz 0</li>
       </ul>
     </div>
     <div class="phase">
@@ -787,6 +993,7 @@
         <li><strong>Khud se pahal:</strong> sahi waqt par</li>
         <li><strong>Kosh, Kala, Guru</strong> teams</li>
         <li><strong>Screen dekhna</strong> aur baaki connectors</li>
+        <li><strong>Pass jab:</strong> sab 10 desk ≥80%, 30 din tak pehchaan mein koi ulti baat nahi</li>
       </ul>
     </div>
   </div>
@@ -800,7 +1007,8 @@
     <div class="rule"><h3>Dono har kaam kar sakte hain</h3><p>Takat alag, team saanjhi. Jisko bhi kaho, kaam hoga; andaaz uska apna.</p></div>
     <div class="rule"><h3>Insaan jaisa, par imaandaar</h3><p>Apni zindagi aur jazbaat ek character ki tarah. Sacche mann se poochho toh sach batayenge ki woh AI hain.</p></div>
     <div class="rule"><h3>Jazbaat aapke liye</h3><p>Mood aur yaadein baat ko garam banane ke liye, kabhi dabaav ya guilt ke liye nahi.</p></div>
-    <div class="rule"><h3>Team ek level gehri</h3><p>Teams aage kaam nahi baant-ti. Twin baantta hai, twin jodta hai, twin bolta hai.</p></div>
+    <div class="rule"><h3>Team ek level gehri</h3><p>Desk aage kaam nahi baant-ta; helper agent sirf saar lautata hai. Twin baantta hai, twin jodta hai, twin bolta hai.</p></div>
+    <div class="rule"><h3>Niyam code mein, prompt mein nahi</h3><p>Privacy, budget, tareekh, mood ke numbers aur bade model par jaana: sab code tay karta hai. Model sirf samajhta, chunta aur bolta hai.</p></div>
     <div class="rule"><h3>Niyam ek jagah</h3><p>Safety, privacy, quality, resources aur fallback har level par ek hi jagah se lagte hain.</p></div>
     <div class="rule"><h3>Sab Mac par</h3><p>Sab kuch local. Cloud sirf tab, jab aap khud chaho, aur tab saaf dikhega ki data bahar ja raha hai.</p></div>
   </div>
