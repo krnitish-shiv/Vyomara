@@ -8,7 +8,7 @@ import { DEFAULT_PERSONA, isPersonaId, personaFor, type PersonaId } from '../sha
 import { app, BrowserWindow, dialog, globalShortcut, ipcMain, Notification, screen, session, shell, systemPreferences } from 'electron';
 import type { SaveDialogOptions } from 'electron';
 import { fileURLToPath, pathToFileURL } from 'node:url';
-import { mkdir, readFile, rename, writeFile } from 'node:fs/promises';
+import { mkdir, readFile, rename, rm, writeFile } from 'node:fs/promises';
 import { spawn, spawnSync } from 'node:child_process';
 import { join } from 'node:path';
 import { AgentError } from '../agent/agent.ts';
@@ -30,7 +30,7 @@ import { loadConfig, validateOllamaModel } from '../config/config.ts';
 import { OllamaProvider } from '../providers/provider.ts';
 import { PersistenceError, SqliteStore } from '../storage/sqlite-store.ts';
 import { UsageSampler } from '../desktop/usage-sampler.ts';
-import { NaturalVoice } from '../desktop/natural-voice.ts';
+import { MAYA_ENGINE, NaturalVoice } from '../desktop/natural-voice.ts';
 import { ProviderError } from '../providers/provider.ts';
 import { ToolExecutionError } from '../tools/executor.ts';
 import type { Logger } from '../types.ts';
@@ -85,7 +85,9 @@ const mcpAllowed = new Set<string>();
 /** Commands the user chose to always allow; cleared when the app quits. */
 /** Standing permissions (apps, browsers, web hosts) are loaded from disk at startup. */
 let approvalMemory = new ApprovalMemory();
-const naturalVoice = new NaturalVoice(join(app.getPath('userData'), 'natural-voice'));
+// Maya 2 (much clearer Hindi) once set up with `pnpm setup:maya`; otherwise Kokoro.
+const mayaVoice = new NaturalVoice(join(app.getPath('userData'), 'maya-voice'), MAYA_ENGINE);
+const naturalVoice = mayaVoice.ready ? mayaVoice : new NaturalVoice(join(app.getPath('userData'), 'natural-voice'));
 const macSpeechRunner = new MacSpeechRunner(undefined, undefined, naturalVoice);
 
 /**
@@ -1481,6 +1483,12 @@ app.whenReady().then(async () => {
 
   mainWindow = createWindow();
   warmUpModel(config);
+  // Maya loads a 3.3 GB model (~25 s): load it now, not on the first reply.
+  if (naturalVoice.engine === 'maya' && naturalVoice.ready) {
+    void naturalVoice.synthesize('हाँ।', 'female', AbortSignal.timeout(180_000))
+      .then(file => rm(file, { force: true }))
+      .catch(() => undefined);
+  }
   // MCP servers start in the background; their tools change the prompt, so prime again once they are ready.
   const startupConfig = config;
   void readMcpConfig(startupConfig.dataDirectory)

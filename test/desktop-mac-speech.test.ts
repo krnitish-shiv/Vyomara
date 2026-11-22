@@ -171,3 +171,21 @@ test('with a file player, synthesized speech plays in the app window and can be 
   assert.deepEqual(await runner.play(again), { status: 'completed' });
   assert.deepEqual(spawned, ['/usr/bin/afplay']);
 });
+
+test('the Maya engine uses the chosen voices and falls back to its defaults', async () => {
+  const { MAYA_ENGINE, MAYA_DEFAULT_VOICES, KOKORO_ENGINE } = await import('../src/desktop/natural-voice.ts');
+  const { mkdtempSync, writeFileSync, rmSync } = await import('node:fs');
+  const { tmpdir } = await import('node:os');
+  const { join } = await import('node:path');
+  const directory = mkdtempSync(join(tmpdir(), 'maya-'));
+  try {
+    assert.deepEqual(MAYA_ENGINE.voices(directory), MAYA_DEFAULT_VOICES, 'no choice saved yet');
+    writeFileSync(join(directory, 'voices.json'), JSON.stringify({ male: 'Siddhant', female: 'Vaidehi' }));
+    assert.deepEqual(MAYA_ENGINE.voices(directory), { male: 'Siddhant', female: 'Vaidehi' });
+    writeFileSync(join(directory, 'voices.json'), JSON.stringify({ male: '../../etc', female: 42 }));
+    assert.deepEqual(MAYA_ENGINE.voices(directory), MAYA_DEFAULT_VOICES, 'unknown names are ignored');
+    assert.deepEqual(KOKORO_ENGINE.voices(directory), { female: 'hf_beta', male: 'hm_omega' });
+  } finally {
+    rmSync(directory, { recursive: true, force: true });
+  }
+});
