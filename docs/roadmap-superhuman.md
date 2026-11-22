@@ -115,3 +115,11 @@ Aap
 - Add a member to an existing team first.
 - Split a team once it has more than 7 members, or once it is doing two different kinds of work.
 - Likely later teams: Legal & Documents, Family & Kids, Business.
+
+**When one team needs another:**
+- **Small needs:** every team has a common toolkit (quick web search, read a page, the time, a calculator) and handles small needs itself.
+- **Big needs:** the team sends a help request to the twin's mind. The router or task manager hands it to the right team, and the answer goes straight back to the team that asked. The owner is not interrupted; it only shows in the step list.
+- **Limits:**
+  - Teams never call each other directly.
+  - A helper never forwards the request to a third team; only one hop is allowed.
+  - A helper sees only the request, never a twin's private vault.
