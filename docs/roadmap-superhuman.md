@@ -45,7 +45,7 @@ From the owner's real test on 2026-11-21. They rated the reply quality "very bad
 
 ## The empire: build spec v1 (2026-11-22, after outside research)
 
-**The build reference is now [empire-spec.md](./empire-spec.md).** It wins over the older notes below wherever the two disagree. The diagram is `docs/empire-design.html` (kept only in the repo).
+**The build reference is now [empire-spec.md](./empire-spec.md); the code layout, UI plan and work order (reorganise first, then padaav 0–3) are in [code-organisation.md](./code-organisation.md).** It wins over the older notes below wherever the two disagree. The diagram is `docs/empire-design.html` (kept only in the repo).
 
 What the research changed:
 - **Desks, not member agents.** Each of the 10 teams is one desk: a static brief plus about 6 skills that load on demand. The old members become skills.
