@@ -45,7 +45,7 @@ From the owner's real test on 2026-11-21. They rated the reply quality "very bad
 
 ## The empire: build spec v1 (2026-11-22, after outside research)
 
-**The build reference is now [empire-spec.md](./empire-spec.md).** It wins over the older notes below wherever the two disagree. The diagram is version 8 of the same artifact (copy in `docs/empire-design.html`).
+**The build reference is now [empire-spec.md](./empire-spec.md).** It wins over the older notes below wherever the two disagree. The diagram is `docs/empire-design.html` (kept only in the repo).
 
 What the research changed:
 - **Desks, not member agents.** Each of the 10 teams is one desk: a static brief plus about 6 skills that load on demand. The old members become skills.
@@ -64,7 +64,7 @@ What the research changed:
 
 ## The empire (target architecture, 2026-11-22)
 
-The owner asked for the whole "empire" to be built the way Claude judges best. Diagram: https://claude.ai/artifact/GqSBJ3VderMbrnBMq2RQJn (copy in `docs/empire-design.html`). The twins are two separate people, each with their own Self (identity, memories, mood, life). The work machine under them is shared: their minds, services, eight departments, engines, and connectors.
+The owner asked for the whole "empire" to be built the way Claude judges best. Diagram: `docs/empire-design.html` (kept only in the repo). The twins are two separate people, each with their own Self (identity, memories, mood, life). The work machine under them is shared: their minds, services, eight departments, engines, and connectors.
 
 ```
 Aap
