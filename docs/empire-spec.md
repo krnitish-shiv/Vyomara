@@ -11,6 +11,35 @@ Sources are listed at the end. Numbers marked **[measure]** are estimates. Measu
 
 ---
 
+## Glossary (the design's empire names → code names)
+
+The design page uses empire words, and the code uses English. Use this table to map one to the other.
+
+| Design word | Meaning | Code / spec |
+|---|---|---|
+| Samrat | the owner | owner |
+| Do chehre | Vyom and Vyomara | twins (`twin-runtime.ts`, `identity.ts`) |
+| Darbar ka darwaza | decides who speaks | Door (`door.ts`) |
+| Pehchaan-patra | identity card | `data/twins/<id>/identity.yaml` (§3.1) |
+| Dil | mood and bonds | `mood.ts`, `state.json` (§5) |
+| Yaad-khana | memory store | `memory_item` table (§4) |
+| Niji tijori | private vault | `owner=P, visibility=private` |
+| Raj-dimaag | planner and router per twin | twin runtime (§2) |
+| Farmaan | a request from the owner | request or task |
+| Bahi-khata | task ledger | `data/tasks.db` (§7) |
+| Kanoon | governance | `governance/*` (§10) |
+| Shahi daftar | shared services | memory, knowledge, scheduler, tracing |
+| Vibhaag | one of the 10 domains | desk (§6) |
+| Mantri | the desk brief and its name (Vishwa, Khoj, …) | desk brief, not a separate LLM hop |
+| Hunar | a capability of a desk | skill (`SKILL.md`) |
+| Harkara | a helper with a fresh context | subagent (§6.3) |
+| Parakhi | a clean-context checker | verifier |
+| Madad ki parchi | a help request | `help_requests[]` in a Report (§6.5) |
+| Chupke se poochna | a quiet ask to the other twin | `twin_ask` (§3.4) |
+| Shakti-ghar | models | engines and modes (§9) |
+| Doot | connectors | tools, connectors, MCP |
+| Padaav | a build stage | phase 0–3 (§14) |
+
 ## 1. What the re-evaluation changed
 
 | Area | Before (design v7) | Now | Why |
